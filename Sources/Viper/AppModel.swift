@@ -4,7 +4,7 @@ import ViperCore
 
 enum Page: String, CaseIterable, Identifiable {
     case overview = "Overview", storage = "Storage", uninstaller = "Uninstaller"
-    case leftovers = "Junk & Leftovers", updates = "Updates", privacy = "Privacy", discover = "Discover & Install", settings = "Settings"
+    case leftovers = "Junk & Leftovers", memory = "Memory", updates = "Updates", privacy = "Privacy", discover = "Discover & Install", settings = "Settings"
     var id: String { rawValue }
     var icon: String {
         switch self {
@@ -12,6 +12,7 @@ enum Page: String, CaseIterable, Identifiable {
         case .storage: return "internaldrive"
         case .uninstaller: return "app.badge"
         case .leftovers: return "tray"
+        case .memory: return "memorychip"
         case .updates: return "arrow.down.circle"
         case .privacy: return "hand.raised"
         case .discover: return "plus.app"
@@ -84,13 +85,29 @@ final class AppModel: ObservableObject {
     @Published var uninstalling = false
     var uninstallTask: Task<Void, Never>?
     var onMaintenanceSettled: (() -> Void)?
-    var maintenanceBusy: Bool { uninstalling || cleaning || updating }
-    /// Shown in the window header only while Viper is changing something.
+    // Memory. Logic lives in MemoryModel.swift.
+    @Published var memory = MemoryState()
+    @Published var freeingMemory = false
+    var memoryScanTask: Task<Void, Never>?
+    /// The five-second refresh loop behind the Memory page; non-nil while it runs.
+    @Published var memoryRefreshTask: Task<Void, Never>?
+    /// The previous scan's second sample, so a refresh tick can measure CPU% across the gap.
+    var lastMemorySample: (taken: Date, processes: [ProcessSample])?
+    /// Apple-signature verdicts shared across scans; helpers in one bundle cost one check.
+    let signatureCache = SignatureCache()
+    /// The facts the last memory scan was built on, kept so stops can recheck protection.
+    var memoryInput: MemoryAdvisor.Input?
+    /// Local launch/activation history used by the memory advisor. Never leaves this Mac.
+    var usageHistory = UsageHistory.load(from: AppModel.appUsageURL)
+    private var usageHistorySaveTask: Task<Void, Never>?
+    var maintenanceBusy: Bool { uninstalling || cleaning || updating || freeingMemory }
+    /// Shown in the sidebar only while Viper is changing something.
     var activityLabel: String? {
         if uninstalling { return "UNINSTALLING" }
         if cleaning { return "CLEANING" }
         if updating { return "UPDATING" }
         if installing { return "INSTALLING" }
+        if freeingMemory { return "FREEING MEMORY" }
         return nil
     }
     // Discover & Install. Logic lives in InstallModel.swift.
@@ -124,6 +141,44 @@ final class AppModel: ObservableObject {
             notice = (notice.map { $0 + " " } ?? "") + "Your saved settings couldn’t be read, so defaults were restored. Nothing else was changed."
         }
         probeFullDiskAccess()
+        observeAppUsage()
+    }
+
+    /// Launch and activation events feed the memory feature's usage history. No timers, no polling.
+    private func observeAppUsage() {
+        let center = NSWorkspace.shared.notificationCenter
+        center.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            guard let id = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier else { return }
+            Task { @MainActor in
+                self?.usageHistory.recordLaunch(id)
+                self?.scheduleUsageHistorySave()
+            }
+        }
+        center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            guard let id = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier else { return }
+            Task { @MainActor in
+                self?.usageHistory.recordActivation(id)
+                self?.scheduleUsageHistorySave()
+            }
+        }
+    }
+
+    /// Usage history is a cache: it writes at most once every 30 seconds and once on quit.
+    private func scheduleUsageHistorySave() {
+        guard usageHistorySaveTask == nil else { return }
+        usageHistorySaveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            guard let self, !Task.isCancelled else { return }
+            usageHistorySaveTask = nil
+            try? usageHistory.save(to: Self.appUsageURL)
+        }
+    }
+
+    /// Flushes any pending usage history; called on terminate via cancelWork.
+    func saveUsageHistoryNow() {
+        usageHistorySaveTask?.cancel()
+        usageHistorySaveTask = nil
+        try? usageHistory.save(to: Self.appUsageURL)
     }
 
     /// Reads a folder macOS only exposes with Full Disk Access; the result is informational, never used to change behavior.
@@ -137,6 +192,7 @@ final class AppModel: ObservableObject {
 
     /// Viper's interface is designed dark-only, so AppKit chrome (alerts, popovers, menus) is kept dark to match.
     func applyAppearance() {
+        Palette.activate(settings.theme)
         let appearance = NSAppearance(named: .darkAqua)
         NSApplication.shared.appearance = appearance
         for window in NSApplication.shared.windows { window.appearance = appearance }
@@ -387,6 +443,10 @@ final class AppModel: ObservableObject {
     /// Cancels scans and checks. Installs, updates, and removals in progress finish first; see AppDelegate.applicationShouldTerminate.
     func cancelWork() {
         cleanupTasks.values.forEach { $0.cancel() }
+        memoryScanTask?.cancel()
+        memoryRefreshTask?.cancel()
+        memoryRefreshTask = nil
+        saveUsageHistoryNow()
         scanTask?.cancel(); inventoryTask?.cancel(); commandLineTask?.cancel(); updateCheckTask?.cancel()
         detectionTask?.cancel(); catalogRefreshTask?.cancel(); reviewTask?.cancel()
     }

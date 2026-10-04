@@ -7,28 +7,35 @@ struct DiscoverView: View {
     @State private var search = ""
     @State private var category: CatalogCategory?
     @State private var statusFilter = StatusFilter.all
-    @State private var compatibleOnly = false
     @State private var detail: CatalogEntry?
+    @State private var collection: StarterCollection?
     @AppStorage("viper.discover.layout") private var layout = CatalogLayout.grid
 
-    enum StatusFilter: Hashable { case all, notInstalled, installed }
+    enum StatusFilter: Hashable { case all, available, installed }
     enum CatalogLayout: String { case grid, list }
 
+    private var checking: Bool { model.refreshingCatalog || model.detectingInstalls }
+
     var body: some View {
-        PageHeading("Discover & Install", subtitle: model.catalog.map(heroDetail)) {
-            Button { model.detectInstallations() } label: { Label("Check installed", systemImage: "app.badge.checkmark") }
-                .buttonStyle(GlowButtonStyle(.secondary, compact: true)).disabled(model.detectingInstalls || model.installing || model.checkingUpdates || model.refreshingCatalog || model.reviewTask != nil)
-                .help("Looks for apps and tools already on this Mac.")
-            if model.refreshingCatalog {
-                Button("Cancel") { model.cancelCatalogRefresh() }.buttonStyle(GlowButtonStyle(.danger, compact: true))
+        PageHeading("Discover & Install", subtitle: checking ? (model.refreshingCatalog ? model.catalogProgress : "Checking installed apps, Homebrew, and npm…") : model.catalog.map(heroDetail)) {
+            if checking {
+                ScanPulse(color: Palette.lavender).scaleEffect(0.8)
+                Button("Cancel check") { model.cancelCatalogRefresh() }.buttonStyle(GlowButtonStyle(.secondary))
             } else {
-                Button { model.refreshCatalogMetadata() } label: { Label("Check availability", systemImage: "arrow.clockwise") }
-                    .buttonStyle(GlowButtonStyle(compact: true)).disabled(model.installEnvironment == nil || model.detectingInstalls || model.installing || model.checkingUpdates || model.reviewTask != nil)
-                    .help("Asks Homebrew and npm for current versions and restrictions. Never installs anything.")
+                Button { model.refreshDiscover() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                    .buttonStyle(GlowButtonStyle(.secondary)).disabled(model.catalog == nil || model.installing || model.checkingUpdates || model.reviewTask != nil)
+                    .help("Checks what’s installed, then asks Homebrew and npm for current versions. Never installs anything.")
             }
         }
             .task { model.loadDiscover() }
             .sheet(item: $detail) { entry in CatalogDetailSheet(entry: entry).environmentObject(model) }
+            .sheet(item: $collection) { item in
+                CollectionSheet(collection: item) { entry in
+                    // Let the collection sheet close before the app's own sheet opens.
+                    collection = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { detail = entry }
+                }.environmentObject(model)
+            }
             .sheet(isPresented: Binding(get: { model.installReview != nil }, set: { if !$0 { model.cancelReview() } })) {
                 InstallReviewSheet().environmentObject(model)
             }
@@ -36,17 +43,11 @@ struct DiscoverView: View {
                 PrerequisiteSheet(manager: manager).environmentObject(model)
             }
         if let catalog = model.catalog {
-            if model.refreshingCatalog || model.detectingInstalls {
-                HStack(spacing: 10) {
-                    ScanPulse(color: Palette.lavender)
-                    Text(model.refreshingCatalog ? model.catalogProgress : "Checking installed apps, Homebrew, and npm…").font(.system(size: 12))
-                }
-            }
-            setupCard
+            setupNotice
             if !model.installQueue.isEmpty { InstallQueueCard() }
-            CollectionCarousel(catalog: catalog)
-            filters
             if !model.installSelection.isEmpty { selectionBar(catalog) }
+            CollectionStrip(catalog: catalog) { collection = $0 }
+            filters
             results(catalog)
             if !model.installJournal.isEmpty { history }
         } else if let message = model.catalogMessage {
@@ -55,71 +56,48 @@ struct DiscoverView: View {
     }
 
     private func heroDetail(_ catalog: Catalog) -> String {
-        let reviewed = (try? Date(catalog.reviewedAt, strategy: .iso8601.year().month().day())).map { $0.formatted(date: .abbreviated, time: .omitted) } ?? catalog.reviewedAt
         let checked: String
         if let refreshed = model.catalogMetadata.refreshedAt {
             checked = Date().timeIntervalSince(refreshed) > 86_400
-                ? "availability stale — check again"
+                ? "availability checked \(RelativeDateTimeFormatter().localizedString(for: refreshed, relativeTo: Date())) — refresh for current versions"
                 : "availability checked \(RelativeDateTimeFormatter().localizedString(for: refreshed, relativeTo: Date()))"
         } else {
-            checked = "availability not checked"
+            checked = "availability not checked yet"
         }
-        return "\(catalog.apps.count) curated apps · reviewed \(reviewed) · \(checked)"
+        return "\(catalog.apps.count) curated apps · \(checked)"
     }
 
-    @ViewBuilder private var setupCard: some View {
+    /// Only shown when something blocks installing. Details live in the setup sheet.
+    @ViewBuilder private var setupNotice: some View {
         if let environment = model.installEnvironment {
             let missing = [environment.homebrew.isEmpty ? PackageManager.homebrew : nil, environment.npm.isEmpty ? PackageManager.npm : nil].compactMap { $0 }
-            let failed = environment.checks.contains { !$0.succeeded }
-            if !missing.isEmpty || failed {
-                Card(color: Palette.peach) {
-                    ForEach(missing, id: \.self) { manager in
-                        HStack(spacing: 12) {
-                            Image(systemName: "shippingbox").font(.system(size: 18)).frame(width: 42, height: 42).glowTile(Palette.peach, radius: 12)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(manager == .homebrew ? "Homebrew isn’t set up yet" : "npm isn’t set up yet").font(.system(size: 14, weight: .semibold))
-                                Text(manager == .homebrew ? "Most apps here install with Homebrew. You can still browse and open App Store or publisher links." : "Command-line AI agents and JavaScript tools install with npm, which comes with Node.js.")
-                                    .font(.system(size: 12)).foregroundStyle(Palette.muted)
-                            }
-                            Spacer()
-                            Button("How to set up") { model.prerequisite = manager }.buttonStyle(GlowButtonStyle(.secondary, compact: true))
-                        }
-                    }
-                    Disclosure("What Viper checked") {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ForEach(environment.checks) { check in
-                                Label("\(check.name): \(check.detail)", systemImage: check.succeeded ? "checkmark.circle" : "exclamationmark.circle")
-                            }
-                        }.font(.system(size: 11)).foregroundStyle(Palette.muted).padding(.top, 6)
-                    }.font(.system(size: 12))
+            ForEach(missing, id: \.self) { manager in
+                HStack(spacing: 10) {
+                    Image(systemName: "shippingbox").foregroundStyle(Palette.yellow)
+                    Text(manager == .homebrew ? "Homebrew isn’t set up, so most apps here can’t install yet." : "npm isn’t set up, so command-line tools can’t install yet.")
+                        .font(.system(size: 12))
+                    Spacer()
+                    Button("How to set up") { model.prerequisite = manager }.buttonStyle(LinkButtonStyle())
                 }
-            } else if environment.npm.count > 1 {
-                Card {
-                    HStack {
-                        Text("npm tools install into").font(.system(size: 12, weight: .semibold))
-                        ViperSelect(title: "npm runtime", selection: Binding(get: { model.npmRuntime?.id ?? "" }, set: { model.npmRuntimeID = $0 }),
-                                    options: environment.npm.map { ($0.location + ($0.isTerminalDefault == true ? "  ·  Terminal default" : ""), $0.id) }).frame(width: 320)
-                        Spacer()
-                    }.disabled(model.installing)
-                }
+                .padding(.horizontal, 14).padding(.vertical, 11)
+                .noticeBackground(Palette.yellow, radius: 12)
+            }
+            if environment.checks.contains(where: { !$0.succeeded }) && missing.isEmpty {
+                InfoLine(text: environment.checks.filter { !$0.succeeded }.map { "\($0.name): \($0.detail)" }.joined(separator: " "), icon: "exclamationmark.circle")
             }
         }
     }
 
+    /// One row: search, category, status, layout.
     private var filters: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                SearchField(placeholder: "Search apps, publishers, or tools", text: $search)
-                ViperSelect(title: "Status", selection: $statusFilter, options: [("All apps", .all), ("Not installed", .notInstalled), ("Installed", .installed)]).frame(width: 150)
-                Toggle("Compatible only", isOn: $compatibleOnly).toggleStyle(ViperCheckboxStyle()).fixedSize()
-                LayoutToggle(layout: $layout)
-            }
-            FlowLayout(spacing: 8, lineSpacing: 8) {
-                FilterChip(title: "All categories", selected: category == nil) { category = nil }
-                ForEach(CatalogCategory.allCases) { item in
-                    FilterChip(title: item.title, selected: category == item) { category = category == item ? nil : item }
-                }
-            }
+        HStack(spacing: 10) {
+            SearchField(placeholder: "Search apps, publishers, or tools", text: $search)
+            ViperSelect(title: "Category", selection: $category,
+                        options: [("All categories", Optional<CatalogCategory>.none)] + CatalogCategory.allCases.map { ($0.title, Optional($0)) })
+                .frame(width: 200)
+            ViperSelect(title: "Status", selection: $statusFilter, options: [("All apps", .all), ("Available to install", .available), ("Installed", .installed)])
+                .frame(width: 180)
+            LayoutToggle(layout: $layout)
         }
     }
 
@@ -130,12 +108,12 @@ struct DiscoverView: View {
                     ForEach(model.installSelection.prefix(5).compactMap(catalog.entry)) { entry in CatalogIcon(entry: entry, appURL: nil, size: 32) }
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("\(model.installSelection.count) selected").font(.system(size: 17, weight: .semibold)).foregroundStyle(Palette.ink)
+                    Text("\(model.installSelection.count) selected").font(.cardTitle).foregroundStyle(Palette.ink)
                         .contentTransition(.numericText()).animation(Motion.snappy, value: model.installSelection.count)
                     Text(model.installSelection.compactMap { catalog.entry($0)?.name }.joined(separator: ", ")).font(.system(size: 12)).foregroundStyle(Palette.muted).lineLimit(1)
                 }
                 Spacer()
-                Button("Clear") { model.installSelection.removeAll() }.buttonStyle(GlowButtonStyle(.secondary, compact: true))
+                Button("Clear") { model.installSelection.removeAll() }.buttonStyle(GlowButtonStyle(.secondary))
                 Button { model.reviewInstall() } label: { Label("Review selected", systemImage: "checklist") }
                     .buttonStyle(GlowButtonStyle()).disabled(model.installReview != nil || model.installing || model.checkingUpdates || model.refreshingCatalog || model.detectingInstalls)
             }
@@ -150,16 +128,18 @@ struct DiscoverView: View {
             switch statusFilter {
             case .all: matchesStatus = true
             case .installed: matchesStatus = status?.isInstalled == true
-            case .notInstalled: matchesStatus = status?.isInstalled == false
+            case .available:
+                switch status {
+                case .available?, .external?: matchesStatus = true
+                default: matchesStatus = false
+                }
             }
-            let compatible: Bool
-            if case .incompatible = status { compatible = false } else { compatible = true }
-            return matchesSearch && matchesStatus && (category == nil || entry.category == category) && (!compatibleOnly || compatible)
+            return matchesSearch && matchesStatus && (category == nil || entry.category == category)
         }
         return VStack(alignment: .leading, spacing: 12) {
             Eyebrow(text: "\(entries.count) \(entries.count == 1 ? "APP" : "APPS")\(category.map { " · \($0.title.uppercased())" } ?? "")")
             if entries.isEmpty {
-                EmptyPanel(icon: "magnifyingglass", title: "No matching apps.", detail: "Try another search, category, or filter. This catalog is a curated selection, not every Mac app.")
+                EmptyPanel(icon: "magnifyingglass", title: "No matching apps.", detail: "Try another search, category, or status. This catalog is a curated selection, not every Mac app.")
             } else if layout == .grid {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 16)], spacing: 16) {
                     ForEach(entries) { entry in CatalogCard(entry: entry) { detail = entry } }
@@ -214,7 +194,7 @@ private struct LayoutToggle: View {
     private func option(_ value: DiscoverView.CatalogLayout, icon: String, label: String) -> some View {
         Button { withAnimation(Motion.snappy) { layout = value } } label: {
             Image(systemName: icon).font(.system(size: 12, weight: .semibold)).frame(width: 34, height: 30)
-                .foregroundStyle(layout == value ? Palette.ink : Palette.muted)
+                .foregroundStyle(layout == value ? (Palette.isWebsite ? Palette.onAccent : Palette.ink) : Palette.muted)
                 .background {
                     if layout == value {
                         GlassThumb(radius: 8).matchedGeometryEffect(id: "layout", in: indicator)
@@ -228,74 +208,123 @@ private struct LayoutToggle: View {
 
 // MARK: - Collections
 
-private struct CollectionCarousel: View {
+/// Starter collections as slim tiles, all visible at once: icons, name, and one Add action.
+private struct CollectionStrip: View {
     @EnvironmentObject private var model: AppModel
     let catalog: Catalog
-    @State private var index = 0
-    private let tints = [Palette.mint, Palette.lavender, Palette.blue, Palette.peach, Palette.yellow]
+    let open: (StarterCollection) -> Void
 
     var body: some View {
-        ScrollViewReader { proxy in
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Starter collections").font(.system(size: 19, weight: .semibold)).foregroundStyle(Palette.titleGradient)
-                    Text("Nothing is selected until you add it.").font(.system(size: 12)).foregroundStyle(Palette.muted)
-                    Spacer()
-                    arrow("chevron.left", enabled: index > 0) { move(-1, proxy) }
-                    arrow("chevron.right", enabled: index < catalog.collections.count - 1) { move(1, proxy) }
-                }
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 14) {
-                        ForEach(Array(catalog.collections.enumerated()), id: \.element.id) { offset, collection in
-                            card(collection, tint: tints[offset % tints.count]).id(collection.id)
-                        }
-                    }.padding(.bottom, 4).padding(.trailing, 2)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("Starter collections").font(.cardTitle)
+                Text("Add a set in one step. Nothing is selected until you add it.").font(.system(size: 12)).foregroundStyle(Palette.muted)
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 12)], spacing: 12) {
+                ForEach(catalog.collections) { collection in
+                    CollectionTile(collection: collection, catalog: catalog) { open(collection) }
                 }
             }
         }
     }
 
-    private func move(_ step: Int, _ proxy: ScrollViewProxy) {
-        index = min(max(0, index + step), catalog.collections.count - 1)
-        withAnimation(Motion.smooth) { proxy.scrollTo(catalog.collections[index].id, anchor: .leading) }
-    }
+}
 
-    private func arrow(_ icon: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon).font(.system(size: 11, weight: .bold))
-        }
-        .buttonStyle(GlowButtonStyle(.secondary, compact: true)).disabled(!enabled)
-        .accessibilityLabel(icon == "chevron.left" ? "Previous collection" : "Next collection")
-    }
+private struct CollectionTile: View {
+    @EnvironmentObject private var model: AppModel
+    let collection: StarterCollection
+    let catalog: Catalog
+    let open: () -> Void
+    @State private var hovering = false
 
-    private func card(_ collection: StarterCollection, tint: Color) -> some View {
+    var body: some View {
         let entries = collection.apps.compactMap(catalog.entry)
         let addable = entries.filter { !model.installSelection.contains($0.id) && model.status(for: $0)?.isSelectable == true }
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: -10) {
-                ForEach(entries.prefix(6)) { entry in CatalogIcon(entry: entry, appURL: model.installedAppURL(for: entry), size: 42) }
-                if entries.count > 6 {
-                    Text("+\(entries.count - 6)").font(.system(size: 12, weight: .bold)).frame(width: 42, height: 42)
-                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Palette.elevated))
-                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.white.opacity(0.15), lineWidth: 1))
-                }
+        HStack(spacing: 12) {
+            HStack(spacing: -8) {
+                ForEach(entries.prefix(3)) { entry in CatalogIcon(entry: entry, appURL: model.installedAppURL(for: entry), size: 28) }
             }.accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(collection.name).font(.system(size: 16, weight: .semibold))
-                Text(collection.summary).font(.system(size: 12)).foregroundStyle(Palette.muted).lineLimit(2).frame(height: 32, alignment: .topLeading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(collection.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                Text("\(entries.count) apps").font(.system(size: 11)).foregroundStyle(Palette.muted)
             }
-            Text(entries.map(\.name).joined(separator: " · ")).font(.system(size: 11)).foregroundStyle(Palette.faint).lineLimit(1)
-            HStack {
-                Button { model.addCollection(collection) } label: { Label(addable.isEmpty ? "All added" : "Add \(addable.count)", systemImage: addable.isEmpty ? "checkmark" : "plus") }
-                    .buttonStyle(GlowButtonStyle(addable.isEmpty ? .secondary : .primary, compact: true)).disabled(addable.isEmpty)
-                    .accessibilityLabel(addable.isEmpty ? "\(collection.name): nothing new to add" : "Add \(addable.count) apps from \(collection.name)")
-                Spacer()
-                Eyebrow(text: "\(entries.count) APPS")
-            }
+            Spacer(minLength: 6)
+            Button { model.addCollection(collection) } label: { Label(addable.isEmpty ? "Added" : "Add \(addable.count)", systemImage: addable.isEmpty ? "checkmark" : "plus") }
+                .buttonStyle(GlowButtonStyle(.secondary, compact: true)).disabled(addable.isEmpty)
+                .accessibilityLabel(addable.isEmpty ? "\(collection.name): nothing new to add" : "Add \(addable.count) apps from \(collection.name)")
         }
-        .padding(20).frame(width: 330, alignment: .leading)
-        .background(GlassBackground(tint: tint, radius: 22))
-        .padding(.vertical, 12)
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .background(GlassBackground(radius: 16, selected: hovering))
+        .contentShape(RoundedRectangle(cornerRadius: 16))
+        .onTapGesture(perform: open)
+        .onHover { hovering = $0 }
+        .animation(Motion.hover, value: hovering)
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(named: "Show apps in \(collection.name)", open)
+    }
+}
+
+/// What's in a collection: every app with its status, added one by one or all together.
+private struct CollectionSheet: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    let collection: StarterCollection
+    let openApp: (CatalogEntry) -> Void
+
+    var body: some View {
+        let entries = collection.apps.compactMap { model.catalog?.entry($0) }
+        let addable = entries.filter { !model.installSelection.contains($0.id) && model.status(for: $0)?.isSelectable == true }
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(collection.name).font(.system(size: 26, weight: .medium)).tracking(-0.6).foregroundStyle(Palette.titleGradient)
+                Text(collection.summary).font(.system(size: 13)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+            }
+            ScrollView {
+                LazyVStack(spacing: 2) {
+                    ForEach(entries) { entry in CollectionAppRow(entry: entry) { openApp(entry) } }
+                }
+            }
+            .frame(maxHeight: 420)
+            .padding(6).glassPanel()
+            HStack {
+                Button("Done") { dismiss() }.buttonStyle(GlowButtonStyle(.secondary)).keyboardShortcut(.cancelAction)
+                Spacer()
+                Button { model.addCollection(collection); dismiss() } label: {
+                    Label(addable.isEmpty ? "All added" : "Add \(addable.count) to selection", systemImage: addable.isEmpty ? "checkmark" : "plus")
+                }
+                .buttonStyle(GlowButtonStyle()).disabled(addable.isEmpty).keyboardShortcut(.defaultAction)
+            }
+        }.padding(30).frame(width: 600).background(SheetBackground()).foregroundStyle(Palette.ink).environment(\.colorScheme, .dark)
+    }
+}
+
+private struct CollectionAppRow: View {
+    @EnvironmentObject private var model: AppModel
+    let entry: CatalogEntry
+    let showDetails: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        let status = model.status(for: entry)
+        HStack(spacing: 12) {
+            CatalogIcon(entry: entry, appURL: model.installedAppURL(for: entry), size: 34)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(entry.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                    Text(entry.publisher).font(.system(size: 11)).foregroundStyle(Palette.muted).lineLimit(1)
+                }
+                Text(entry.summary).font(.system(size: 11)).foregroundStyle(Palette.muted).lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            StatusBadge(entry: entry, status: status, queued: model.queueItem(for: entry)?.state, progress: model.queueItem(for: entry)?.progress, stale: model.catalogAvailabilityIsStale(entry))
+            CatalogPrimaryAction(entry: entry, status: status, selected: model.installSelection.contains(entry.id), compact: true, showDetails: showDetails)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .rowHighlight(hovering: hovering)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: showDetails)
+        .onHover { hovering = $0 }
+        .help("Show details for \(entry.name)")
     }
 }
 
@@ -320,21 +349,20 @@ private struct CatalogCard: View {
                 Spacer(minLength: 4)
                 if selected {
                     Image(systemName: "checkmark").font(.system(size: 10, weight: .heavy)).foregroundStyle(Palette.onAccent).frame(width: 22, height: 22)
-                        .background(Circle().fill(Color.white))
-                        .shadow(color: .black.opacity(0.4), radius: 3, y: 1)
+                        .background(RoundedRectangle(cornerRadius: Palette.isWebsite ? 6 : 11, style: .continuous).fill(Palette.isWebsite ? Palette.cream : Color.white))
+                        .shadow(color: .black.opacity(Palette.isWebsite ? 0 : 0.4), radius: Palette.isWebsite ? 0 : 3, y: Palette.isWebsite ? 0 : 1)
                         .transition(.scale.combined(with: .opacity))
                         .accessibilityLabel("Selected")
                 }
             }
             Text(entry.summary).font(.system(size: 12)).foregroundStyle(Palette.muted).lineLimit(2, reservesSpace: true)
                 .frame(maxWidth: .infinity, alignment: .topLeading).padding(.top, 12)
-            MetaTags(entry: entry).padding(.top, 10)
-            GlowDivider().padding(.vertical, 14)
             HStack(spacing: 8) {
                 StatusBadge(entry: entry, status: status, queued: model.queueItem(for: entry)?.state, progress: model.queueItem(for: entry)?.progress, stale: model.catalogAvailabilityIsStale(entry))
                 Spacer(minLength: 6)
                 CatalogPrimaryAction(entry: entry, status: status, selected: selected, compact: true, showDetails: showDetails)
             }
+            .frame(minHeight: 30).padding(.top, 14)
             if let item = model.queueItem(for: entry), item.state == .installing {
                 ActivityBar(fraction: item.progress?.overallFraction ?? 0.04, height: 5)
                     .padding(.top, 12)
@@ -374,8 +402,7 @@ private struct CatalogRow: View {
                 }
                 Text(entry.summary).font(.system(size: 12)).foregroundStyle(Palette.muted).lineLimit(1).truncationMode(.tail)
             }.padding(.trailing, 16).frame(maxWidth: .infinity, alignment: .leading)
-            MetaTags(entry: entry, showPrice: false).frame(width: 215, alignment: .leading)
-            StatusBadge(entry: entry, status: status, queued: model.queueItem(for: entry)?.state, progress: model.queueItem(for: entry)?.progress, stale: model.catalogAvailabilityIsStale(entry)).frame(width: 165, alignment: .leading)
+            StatusBadge(entry: entry, status: status, queued: model.queueItem(for: entry)?.state, progress: model.queueItem(for: entry)?.progress, stale: model.catalogAvailabilityIsStale(entry)).frame(width: 170, alignment: .trailing)
             CatalogPrimaryAction(entry: entry, status: status, selected: selected, compact: true, showDetails: showDetails).frame(width: 96, alignment: .trailing)
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -386,29 +413,6 @@ private struct CatalogRow: View {
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityAction(named: "Show details", showDetails)
-    }
-}
-
-private struct MetaTags: View {
-    let entry: CatalogEntry
-    var showPrice = true
-    var body: some View {
-        HStack(spacing: 6) {
-            tag(entry.kind == .app ? "App" : "Command line", icon: entry.kind == .app ? "macwindow" : "terminal")
-            tag(entry.install.method.sourceLabel == "Publisher website" ? "Website" : entry.install.method.sourceLabel, icon: nil)
-            if showPrice && entry.pricing != .unverified { tag(entry.pricing == .freemium ? "Free + paid" : entry.pricing.label, icon: nil) }
-        }
-    }
-    private func tag(_ text: String, icon: String?) -> some View {
-        HStack(spacing: 4) {
-            if let icon { Image(systemName: icon).font(.system(size: 9, weight: .semibold)) }
-            Text(text).lineLimit(1)
-        }
-        .font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.muted)
-        .padding(.horizontal, 8).padding(.vertical, 4)
-        .background(Capsule().fill(Color.white.opacity(0.05)))
-        .overlay(Capsule().strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
-        .fixedSize()
     }
 }
 
@@ -452,13 +456,16 @@ struct CatalogIcon: View {
                 Text(String(entry.name.prefix(1)).uppercased())
                     .font(.system(size: size * 0.44, weight: .black, design: .rounded)).foregroundStyle(Palette.catalog(entry.category))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(LinearGradient(colors: [Palette.catalog(entry.category).opacity(0.3), Palette.elevated], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .background {
+                        if Palette.isWebsite { Palette.elevated }
+                        else { LinearGradient(colors: [Palette.catalog(entry.category).opacity(0.3), Palette.elevated], startPoint: .topLeading, endPoint: .bottomTrailing) }
+                    }
             }
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
-        .background(RoundedRectangle(cornerRadius: size * 0.24, style: .continuous).fill(Color.black.opacity(0.35)).offset(y: 1.5))
+        .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(Palette.isWebsite ? Palette.line : Color.white.opacity(0.14), lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: size * 0.24, style: .continuous).fill(Palette.isWebsite ? Palette.surface : Color.black.opacity(0.35)).offset(y: Palette.isWebsite ? 0 : 1.5))
         .accessibilityHidden(true)
     }
 }
@@ -471,22 +478,20 @@ private struct StatusBadge: View {
     var stale = false
 
     var body: some View {
-        let (icon, text, color) = summary
-        HStack(spacing: 5) {
-            if queued == .installing { ScanPulse(color: color).scaleEffect(0.6).frame(width: 12, height: 12) } else { Image(systemName: icon).font(.system(size: 10, weight: .bold)) }
-            Text(text).lineLimit(1)
+        if let (icon, text, color) = summary {
+            HStack(spacing: 5) {
+                if queued == .installing { ScanPulse(color: color).scaleEffect(0.6).frame(width: 12, height: 12) } else { Image(systemName: icon).font(.system(size: 10, weight: .semibold)).foregroundStyle(color) }
+                Text(text).lineLimit(1).foregroundStyle(Palette.muted)
+            }
+            .font(.system(size: 11, weight: .medium))
+            .help(status.map { StatusLine.describe($0, entry: entry).1 } ?? "")
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(status.map { StatusLine.describe($0, entry: entry).1 } ?? text)
         }
-        .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(color)
-        .padding(.horizontal, 9).padding(.vertical, 5)
-        .background(Capsule().fill(color.opacity(0.12)))
-        .overlay(Capsule().strokeBorder(color.opacity(0.35), lineWidth: 1))
-        .help(stale ? "Availability was checked more than a day ago. Check again before adding it." : (status.map { StatusLine.describe($0, entry: entry).1 } ?? ""))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(status.map { StatusLine.describe($0, entry: entry).1 } ?? text)
     }
 
-    private var summary: (String, String, Color) {
+    /// Nil when the action button already says everything (an app you can simply add).
+    private var summary: (String, String, Color)? {
         switch queued {
         case .queued: return ("clock", "Queued", Palette.lavender)
         case .installing:
@@ -502,14 +507,15 @@ private struct StatusBadge: View {
         }
         switch status {
         case nil: return ("hourglass", "Checking…", Palette.slate)
-        case .available: return stale ? ("clock", "Checked earlier", Palette.yellow) : ("checkmark.seal", "Ready to install", Palette.mint)
+        // Stale availability never claims "Ready"; the review re-checks before anything installs.
+        case .available: return stale ? ("clock", "Not checked recently", Palette.slate) : nil
         case .installed(_, let version): return ("checkmark.circle.fill", version.isEmpty ? "Installed" : "Installed · \(version)", Palette.blue)
         case .installedElsewhere: return ("checkmark.circle", "Installed separately", Palette.blue)
         case .needsSetup(let manager): return ("shippingbox", "Needs \(manager.rawValue)", Palette.yellow)
         case .unavailable: return ("xmark.octagon", "Unavailable", Palette.peach)
         case .incompatible: return ("nosign", "Not compatible", Palette.peach)
         case .needsAttention: return ("exclamationmark.triangle", "Needs attention", Palette.yellow)
-        case .external(let method): return ("arrow.up.right.square", method == .appStore ? "App Store" : "Publisher site", Palette.slate)
+        case .external(let method): return ("arrow.up.right.square", method == .appStore ? "App Store" : "Publisher’s site", Palette.slate)
         }
     }
 }
@@ -545,15 +551,9 @@ private struct CatalogPrimaryAction: View {
             case nil:
                 EmptyView()
             case .available:
-                if model.catalogAvailabilityIsStale(entry) {
-                    Button(compact ? "Check" : "Check again") { model.refreshCatalogMetadata() }
-                        .buttonStyle(GlowButtonStyle(.secondary, compact: compact))
-                        .accessibilityLabel("Check availability for \(entry.name) again before adding it")
-                } else {
-                    Button { model.toggleSelection(entry) } label: { Label(selected ? "Added" : "Add", systemImage: selected ? "checkmark" : "plus") }
-                        .buttonStyle(GlowButtonStyle(selected ? .primary : .secondary, compact: compact))
-                        .accessibilityLabel(selected ? "Remove \(entry.name) from selection" : "Add \(entry.name) to selection")
-                }
+                Button { model.toggleSelection(entry) } label: { Label(selected ? "Added" : "Add", systemImage: selected ? "checkmark" : "plus") }
+                    .buttonStyle(GlowButtonStyle(selected ? .primary : .secondary, compact: compact))
+                    .accessibilityLabel(selected ? "Remove \(entry.name) from selection" : "Add \(entry.name) to selection")
             case .installed, .installedElsewhere:
                 if let url = model.installedAppURL(for: entry) {
                     Button { model.openApplication(url) } label: { Label("Open", systemImage: "arrow.up.forward.app") }
@@ -561,7 +561,7 @@ private struct CatalogPrimaryAction: View {
                 }
             case .needsSetup(let manager):
                 Button(compact ? "Set up" : "Set up \(manager.rawValue)") { model.prerequisite = manager }
-                    .buttonStyle(GlowButtonStyle(.danger, compact: compact)).accessibilityLabel("Set up \(manager.rawValue)")
+                    .buttonStyle(GlowButtonStyle(.warning, compact: compact)).accessibilityLabel("Set up \(manager.rawValue)")
             case .external(let method):
                 Button { model.openExternal((entry.install.url ?? entry.website).absoluteString) } label: { Label("Get", systemImage: "arrow.up.right") }
                     .buttonStyle(GlowButtonStyle(.secondary, compact: compact)).accessibilityLabel("Get \(entry.name) from the \(method.sourceLabel)")
@@ -779,13 +779,13 @@ private struct InstallQueueCard: View {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 10) {
                         if model.installing { ScanPulse() }
-                        Text(model.installing ? "Installing your apps" : "Install queue finished").font(.system(size: 18, weight: .semibold))
+                        Text(model.installing ? "Installing your apps" : "Install queue finished").font(.cardTitle)
                     }
                     Text("\(installed) installed · \(problems) need\(problems == 1 ? "s" : "") a look · \(waiting) waiting").font(.system(size: 12)).foregroundStyle(Palette.muted)
                 }
                 Spacer()
                 if waiting > 0 {
-                    Button("Cancel waiting items") { model.cancelPendingInstalls() }.buttonStyle(GlowButtonStyle(.danger))
+                    Button("Cancel waiting") { model.cancelPendingInstalls() }.buttonStyle(GlowButtonStyle(.secondary))
                 }
                 if !model.installing {
                     Button("Clear list") { model.clearFinishedInstalls() }.buttonStyle(GlowButtonStyle(.secondary))
@@ -846,7 +846,7 @@ private struct QueueRow: View {
             if !item.log.isEmpty {
                 Disclosure("Package manager output") {
                     Text(item.log).font(.system(size: 10, design: .monospaced)).textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(10).background(RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.4)))
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(10).background(RoundedRectangle(cornerRadius: 8).fill(Palette.isWebsite ? Palette.surface : Color.black.opacity(0.4)))
                         .foregroundStyle(Palette.mint.opacity(0.85))
                 }.font(.system(size: 11))
             }
@@ -896,13 +896,13 @@ private struct PrerequisiteSheet: View {
                 step(2, manager == .homebrew
                      ? "When it finishes, follow any “Next steps” it shows. Viper doesn’t run the installer or change your shell settings for you."
                      : "Viper doesn’t install Node.js silently or change your shell settings for you.")
-                step(3, "Come back to Viper and choose Check installed apps.")
+                step(3, "Come back to Viper and choose Refresh.")
             }
             HStack {
                 Button { model.openExternal(manager == .homebrew ? "https://brew.sh" : "https://nodejs.org/en/download") } label: {
                     Label(manager == .homebrew ? "Open brew.sh" : "Open nodejs.org", systemImage: "arrow.up.right")
                 }.buttonStyle(GlowButtonStyle())
-                Button("Check installed apps") { model.detectInstallations(); dismiss() }.buttonStyle(GlowButtonStyle(.secondary))
+                Button("Refresh") { model.refreshDiscover(); dismiss() }.buttonStyle(GlowButtonStyle(.secondary))
                 Spacer()
                 Button("Done") { dismiss() }.buttonStyle(GlowButtonStyle(.secondary)).keyboardShortcut(.defaultAction)
             }

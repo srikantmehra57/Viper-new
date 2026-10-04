@@ -81,7 +81,7 @@ private struct ViperMenu: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.openWindow) private var openWindow
     var body: some View {
-        Text(model.uninstalling ? "Viper · Uninstalling" : model.cleaning ? "Viper · Cleaning" : model.updating ? "Viper · Updating" : model.installing ? "Viper · Installing apps" : (model.scanning ? "Viper · Scanning storage" : (model.checkingUpdates ? "Viper · Checking updates" : (model.leftovers.loading || model.junk.loading ? "Viper · Scanning for junk" : "Viper · Running, idle"))))
+        Text(model.uninstalling ? "Viper · Uninstalling" : model.cleaning ? "Viper · Cleaning" : model.updating ? "Viper · Updating" : model.installing ? "Viper · Installing apps" : model.freeingMemory ? "Viper · Freeing memory" : (model.scanning ? "Viper · Scanning storage" : (model.checkingUpdates ? "Viper · Checking updates" : (model.memory.loading ? "Viper · Scanning memory" : (model.leftovers.loading || model.junk.loading ? "Viper · Scanning for junk" : "Viper · Running, idle")))))
         Text(model.settings.allowReviewedChanges ? "Reviewed changes are on" : "Read-only — scans only")
         if let summary = model.scanSummary {
             Text("Last scan · \(summary.files.formatted()) files · \(bytes(summary.allocatedBytes)) allocated")
@@ -125,6 +125,7 @@ struct RootView: View {
                                 case .storage: StorageView()
                                 case .uninstaller: ApplicationsView()
                                 case .leftovers: LeftoversView()
+                                case .memory: MemoryView()
                                 case .updates: UpdatesView()
                                 case .privacy: PrivacyView()
                                 case .discover: DiscoverView()
@@ -140,13 +141,6 @@ struct RootView: View {
                             .background(NoElasticScroll())
                     }
                     .scrollIndicators(.automatic)
-                    .overlay(alignment: .topTrailing) {
-                        if let activity = model.activityLabel {
-                            Tag(text: activity, color: Palette.mint, pulse: true)
-                                .padding(.top, 20).padding(.trailing, 18)
-                                .transition(.scale(scale: 0.8).combined(with: .opacity))
-                        }
-                    }
                     .onChange(of: model.page) { proxy.scrollTo("top", anchor: .top) }
                 }
                 .animation(reduceMotion ? nil : Motion.smooth, value: model.page)
@@ -161,6 +155,7 @@ struct RootView: View {
         .foregroundStyle(Palette.ink)
         .tint(Palette.lavender)
         .environment(\.colorScheme, .dark)
+        .id(model.settings.theme)
         .alert("Viper", isPresented: Binding(get: { model.notice != nil }, set: { if !$0 { model.notice = nil } })) {
             Button("OK") { model.notice = nil }
         } message: { Text(model.notice ?? "") }
@@ -208,13 +203,22 @@ private struct Sidebar: View {
             GlowDivider().padding(.vertical, 12).padding(.horizontal, 6)
             NavRow(page: .settings, selected: model.page == .settings, namespace: selection) { model.page = .settings }
             Spacer(minLength: 18)
+            // Viper-wide activity lives here, not over the page, so it never floats on top of headings or buttons.
+            if let activity = model.activityLabel {
+                Tag(text: activity, color: Palette.isWebsite ? Palette.signal : Palette.mint, pulse: true)
+                    .padding(.leading, 6)
+                    .transition(.opacity.combined(with: .offset(y: 6)))
+                    .accessibilityLabel("Viper is \(activity.lowercased())")
+            }
             Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")")
                 .font(.system(size: 10)).foregroundStyle(Palette.faint).padding(.top, 12).padding(.bottom, 4).padding(.leading, 6)
         }
         .padding(12)
         .frame(width: 226).frame(maxHeight: .infinity)
         .background(GlassBackground(radius: 0, bordered: false))
+        .overlay(alignment: .trailing) { if Palette.isWebsite { Rectangle().fill(Palette.line).frame(width: 1) } }
         .animation(reduceMotion ? nil : Motion.snappy, value: model.page)
+        .animation(reduceMotion ? nil : Motion.smooth, value: model.activityLabel)
     }
 }
 
@@ -225,27 +229,40 @@ struct ViperMark: View {
     @State private var breathe = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
-        Text("V").font(.system(size: size * 0.5, weight: .semibold, design: .rounded))
-            .foregroundStyle(Color.white)
-            .frame(width: size, height: size)
-            .background {
+        let shape = RoundedRectangle(cornerRadius: size * (Palette.isWebsite ? 0.24 : 0.3), style: .continuous)
+        ZStack {
+            Text("V").font(.system(size: size * 0.5, weight: Palette.isWebsite ? .bold : .semibold, design: .rounded))
+                .foregroundStyle(Palette.isWebsite ? Palette.onAccent : Color.white)
+            if Palette.isWebsite {
+                // The orange square blinks while Viper is changing something, where Space breathes a glow.
+                RoundedRectangle(cornerRadius: size * 0.045, style: .continuous).fill(Palette.orange)
+                    .frame(width: size * 0.15, height: size * 0.15)
+                    .blink(active && !reduceMotion)
+                    .offset(x: size * 0.33, y: size * 0.32)
+            }
+        }
+        .frame(width: size, height: size)
+        .background {
+            if Palette.isWebsite {
+                shape.fill(Palette.cream)
+            } else {
                 shape.fill(Color.white.opacity(0.08))
                     .overlay { shape.fill(RadialGradient(colors: [Palette.ember.opacity(0.75), .clear], center: .bottomTrailing, startRadius: 0, endRadius: size)) }
                     .overlay { shape.fill(RadialGradient(colors: [Palette.violet.opacity(0.9), .clear], center: .topLeading, startRadius: 0, endRadius: size)) }
                     .overlay { GrainLayer(opacity: 0.14).clipShape(shape) }
                     .overlay { shape.strokeBorder(LinearGradient(colors: [Color.white.opacity(0.45), Color.white.opacity(0.06)], startPoint: .top, endPoint: .bottom), lineWidth: 1) }
             }
-            .shadow(color: Palette.violet.opacity(active && breathe ? 0.7 : 0.3), radius: active && breathe ? 16 : 10, y: 4)
-            .onChange(of: active, initial: true) { _, isActive in
-                guard !reduceMotion else { return }
-                if isActive {
-                    withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { breathe = true }
-                } else {
-                    withAnimation(.easeOut(duration: 0.3)) { breathe = false }
-                }
+        }
+        .shadow(color: Palette.violet.opacity(Palette.isWebsite ? 0 : (active && breathe ? 0.7 : 0.3)), radius: Palette.isWebsite ? 0 : (active && breathe ? 16 : 10), y: Palette.isWebsite ? 0 : 4)
+        .onChange(of: active, initial: true) { _, isActive in
+            guard !reduceMotion, !Palette.isWebsite else { return }
+            if isActive {
+                withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { breathe = true }
+            } else {
+                withAnimation(.easeOut(duration: 0.3)) { breathe = false }
             }
-            .accessibilityHidden(true)
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -257,36 +274,38 @@ private struct NavRow: View {
     @State private var hovering = false
     @State private var bounce = 0
     var body: some View {
+        let activeInk = Palette.isWebsite && selected ? Palette.onAccent : Palette.ink
+        let dot = Palette.isWebsite ? Palette.orange : page.aura[0]
         Button {
             bounce += 1
             action()
         } label: {
             HStack(spacing: 11) {
                 Image(systemName: page.icon).font(.system(size: 13.5, weight: .regular)).frame(width: 20)
-                    .foregroundStyle(selected || hovering ? Palette.ink : Palette.muted)
+                    .foregroundStyle(selected || hovering ? activeInk : Palette.muted)
                     .symbolEffect(.bounce, value: bounce)
                 Text(page.rawValue).font(.system(size: 13, weight: selected ? .medium : .regular))
-                    .foregroundStyle(selected || hovering ? Palette.ink : Palette.ink.opacity(0.62))
+                    .foregroundStyle(selected || hovering ? activeInk : Palette.ink.opacity(0.68))
                 Spacer(minLength: 0)
                 if selected {
-                    Circle().fill(page.aura[0]).frame(width: 5, height: 5)
-                        .shadow(color: page.aura[0], radius: 4)
+                    Swatch(color: dot, size: Palette.isWebsite ? 6 : 5, glow: 4)
                         .transition(.scale.combined(with: .opacity))
                 }
             }
             .padding(.horizontal, 12).padding(.vertical, 9)
             .background {
                 if selected {
-                    GlassThumb(radius: 11).matchedGeometryEffect(id: "nav-selection", in: namespace)
+                    GlassThumb(radius: Palette.isWebsite ? 9 : 11).matchedGeometryEffect(id: "nav-selection", in: namespace)
                 } else if hovering {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous).fill(Color.white.opacity(0.045))
+                    RoundedRectangle(cornerRadius: Palette.isWebsite ? 9 : 11, style: .continuous)
+                        .fill(Palette.isWebsite ? Palette.elevated : Color.white.opacity(0.045))
                 }
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .modifier(FocusHalo(kind: .rounded(11)))
+        .modifier(FocusHalo(kind: .rounded(Palette.isWebsite ? 9 : 11)))
         .animation(Motion.hover, value: hovering)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }

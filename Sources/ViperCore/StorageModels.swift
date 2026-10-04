@@ -61,6 +61,16 @@ public struct FolderTotal: Sendable, Hashable {
     }
 }
 
+public struct StorageMapItem: Identifiable, Sendable {
+    public enum Kind: Sendable, Equatable { case folder, file, remaining }
+    public var id: String { url?.path ?? "remaining" }
+    public let name: String
+    public let url: URL?
+    public let kind: Kind
+    public let files: Int
+    public let allocatedBytes: Int64
+}
+
 public struct ScanResult: Sendable {
     public let root: URL
     public let completedAt: Date
@@ -69,6 +79,7 @@ public struct ScanResult: Sendable {
     public let allocatedBytes: Int64
     public let categories: [StorageCategory: Int64]
     public let largestFiles: [StorageFile]
+    public let largestRootFiles: [StorageFile]
     /// Allocated totals for each immediate subfolder of the scan root, largest first.
     public let largestFolders: [FolderTotal]
     public let skippedLinks: Int
@@ -80,6 +91,23 @@ public struct ScanResult: Sendable {
 
     public var hasLimitedCoverage: Bool {
         unreadableCount > 0 || skippedCloudItems > 0 || omittedVolumes > 0
+    }
+
+    public var mapItems: [StorageMapItem] {
+        guard allocatedBytes > 0 else { return [] }
+        let folders = largestFolders.map { StorageMapItem(name: $0.name, url: $0.url, kind: .folder, files: $0.files, allocatedBytes: $0.allocatedBytes) }
+        let looseFiles = largestRootFiles.map { StorageMapItem(name: $0.url.lastPathComponent, url: $0.url, kind: .file, files: 1, allocatedBytes: $0.allocatedBytes) }
+        let shown = Array((folders + looseFiles).filter { $0.allocatedBytes > 0 }.sorted {
+            $0.allocatedBytes == $1.allocatedBytes ? $0.id < $1.id : $0.allocatedBytes > $1.allocatedBytes
+        }.prefix(6))
+        var items = shown
+        let remainingBytes = max(0, allocatedBytes - shown.reduce(Int64(0)) { $0 + $1.allocatedBytes })
+        if remainingBytes > 0 {
+            let remainingFiles = max(0, files - shown.reduce(0) { $0 + $1.files })
+            items.append(StorageMapItem(name: shown.isEmpty ? "Files in this folder" : "Other files & folders",
+                                        url: nil, kind: .remaining, files: remainingFiles, allocatedBytes: remainingBytes))
+        }
+        return items
     }
 
     public var summary: StoredScanSummary {

@@ -39,6 +39,7 @@ public enum StorageScanner {
         var categories: [StorageCategory: Int64] = [:]
         var folderTotals: [String: (files: Int, allocated: Int64)] = [:]
         var largest: [StorageFile] = []
+        var rootLargest: [StorageFile] = []
         var links = 0
         var cloud = 0
         var duplicates = 0
@@ -104,6 +105,7 @@ public enum StorageScanner {
                 let file = StorageFile(url: url, logicalBytes: logicalSize, allocatedBytes: allocatedSize, category: category)
                 let resultLimit = min(max(largestFileLimit, 1), 5_000)
                 insertLargest(file, into: &largest, limit: resultLimit)
+                if !relative.contains("/") { insertLargest(file, into: &rootLargest, limit: 6) }
                 if lastUpdate.duration(to: .now) >= .milliseconds(150) {
                     await onProgress(ScanProgress(files: files, allocatedBytes: allocated, currentFolder: url.deletingLastPathComponent().lastPathComponent))
                     lastUpdate = .now
@@ -118,7 +120,7 @@ public enum StorageScanner {
         return ScanResult(
             root: root, completedAt: Date(), files: files, logicalBytes: logical,
             allocatedBytes: allocated, categories: categories, largestFiles: largest,
-            largestFolders: Array(folders.prefix(12)),
+            largestRootFiles: rootLargest, largestFolders: Array(folders.prefix(12)),
             skippedLinks: links, skippedCloudItems: cloud, duplicateHardLinks: duplicates,
             unreadableCount: errors.count, unreadableExamples: errors.examples, omittedVolumes: volumes
         )

@@ -71,7 +71,7 @@ struct CleanupActionBar: View {
             HStack(spacing: 14) {
                 Image(systemName: "sparkles").font(.system(size: 18)).frame(width: 44, height: 44).glowTile(Palette.mint, radius: 12)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(working ? model.cleanupState(target).progress : "\(count) selected · \(bytes(size))").font(.system(size: 18, weight: .semibold))
+                    Text(working ? model.cleanupState(target).progress : "\(count) selected · \(bytes(size))").font(.cardTitle)
                         .contentTransition(.numericText()).animation(Motion.snappy, value: count)
                     Text("Items go to the Trash, so you can put them back. Space is freed when the Trash is emptied.")
                         .font(.system(size: 11)).foregroundStyle(Palette.muted)
@@ -106,14 +106,14 @@ struct CleanupResultCard: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(restored.count > 0 && removed.isEmpty ? "Put back \(restored.count) item\(restored.count == 1 ? "" : "s")."
                          : "Moved \(removed.count) item\(removed.count == 1 ? "" : "s") to the Trash · \(bytes(removed.reduce(0) { $0 + ($1.item.size ?? 0) }))")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.cardTitle)
                     Text(problems.isEmpty ? "Empty the Trash to free the space." : "\(problems.count) item\(problems.count == 1 ? " was" : "s were") left alone. Details below.")
                         .font(.system(size: 12)).foregroundStyle(Palette.muted)
                 }
                 Spacer()
                 if state.canPutBack {
                     Button { model.putBackCleanup(target) } label: { Label("Put back", systemImage: "arrow.uturn.backward") }
-                        .buttonStyle(GlowButtonStyle(.accent))
+                        .buttonStyle(GlowButtonStyle(.secondary))
                         .disabled(model.maintenanceBusy || model.installing)
                 }
                 Button("Done") { model.dismissCleanupResult(target) }.buttonStyle(GlowButtonStyle(.secondary))

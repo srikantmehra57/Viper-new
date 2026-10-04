@@ -3,6 +3,7 @@ import ViperCore
 
 /// A slim progress bar on recessed glass. A soft sheen travels along the fill while work is active,
 /// so a package manager that goes quiet still visibly reads as working.
+/// In the Website theme it's a flat, square-ended bar whose fill carries moving drafting hatches instead.
 struct ActivityBar: View {
     let fraction: Double
     var active = true
@@ -13,32 +14,65 @@ struct ActivityBar: View {
     var body: some View {
         GeometryReader { geometry in
             let width = max(height, geometry.size.width * min(1, max(0, fraction)))
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.black.opacity(0.3))
-                    .overlay(Capsule().strokeBorder(LinearGradient(colors: [Color.black.opacity(0.3), Color.white.opacity(0.08)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
-                Capsule().fill(LinearGradient(colors: Palette.spectrum, startPoint: .leading, endPoint: .trailing))
-                    .overlay(Capsule().fill(LinearGradient(colors: [Color.white.opacity(0.35), .clear], startPoint: .top, endPoint: .center)))
-                    .overlay {
-                        if active && !reduceMotion {
-                            LinearGradient(colors: [.clear, Color.white.opacity(0.55), .clear], startPoint: .leading, endPoint: .trailing)
-                                .frame(width: 70)
-                                .offset(x: sweep ? width : -70)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .clipShape(Capsule())
+            if Palette.isWebsite {
+                ZStack(alignment: .leading) {
+                    FlatTrack(radius: 2)
+                    RoundedRectangle(cornerRadius: 2, style: .continuous).fill(Palette.signal)
+                        .overlay {
+                            if active && !reduceMotion { MovingHatch().clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous)) }
                         }
-                    }
-                    .frame(width: width)
-                    .animation(.spring(response: 0.8, dampingFraction: 0.9), value: fraction)
+                        .frame(width: width)
+                        .animation(.spring(response: 0.8, dampingFraction: 0.9), value: fraction)
+                }
+            } else {
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.black.opacity(0.3))
+                        .overlay { Capsule().strokeBorder(LinearGradient(colors: [Color.black.opacity(0.3), Color.white.opacity(0.08)], startPoint: .top, endPoint: .bottom), lineWidth: 1) }
+                    Capsule().fill(LinearGradient(colors: Palette.spectrum, startPoint: .leading, endPoint: .trailing))
+                        .overlay { Capsule().fill(LinearGradient(colors: [Color.white.opacity(0.35), .clear], startPoint: .top, endPoint: .center)) }
+                        .overlay {
+                            if active && !reduceMotion {
+                                LinearGradient(colors: [.clear, Palette.ink.opacity(0.55), .clear], startPoint: .leading, endPoint: .trailing)
+                                    .frame(width: 70)
+                                    .offset(x: sweep ? width : -70)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        .frame(width: width)
+                        .animation(.spring(response: 0.8, dampingFraction: 0.9), value: fraction)
+                }
             }
         }
         .frame(height: height)
         .onAppear {
-            guard active, !reduceMotion else { return }
+            guard active, !reduceMotion, !Palette.isWebsite else { return }
             withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) { sweep = true }
         }
         .accessibilityElement()
         .accessibilityLabel("Progress")
         .accessibilityValue("\(Int((fraction * 100).rounded())) percent")
+    }
+}
+
+/// Diagonal hatching that drifts along a Website-theme progress fill, like a drafting pattern in motion.
+private struct MovingHatch: View {
+    private static let spacing: CGFloat = 7
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
+            let phase = CGFloat(context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.7) / 0.7) * Self.spacing
+            Canvas { canvas, size in
+                var path = Path()
+                var x = -size.height + phase - Self.spacing
+                while x < size.width + Self.spacing {
+                    path.move(to: CGPoint(x: x, y: size.height))
+                    path.addLine(to: CGPoint(x: x + size.height, y: 0))
+                    x += Self.spacing
+                }
+                canvas.stroke(path, with: .color(Palette.onAccent.opacity(0.28)), lineWidth: 2)
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
 
@@ -54,7 +88,7 @@ struct OperationProgressView: View {
                 ForEach(OperationProgress.Phase.allCases, id: \.self) { phase in
                     PhaseStep(phase: phase, current: progress.phase)
                     if phase != .verifying {
-                        Rectangle().fill(phase < progress.phase ? Palette.ink.opacity(0.5) : Color.white.opacity(0.1))
+                        Rectangle().fill(phase < progress.phase ? Palette.ink.opacity(0.5) : Palette.line)
                             .frame(height: 1).frame(maxWidth: 28).padding(.horizontal, 6)
                     }
                 }
@@ -85,9 +119,13 @@ struct OperationProgressView: View {
         }
         .padding(14)
         .background {
-            let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
-            shape.fill(Color.black.opacity(0.2))
-                .overlay { shape.strokeBorder(LinearGradient(colors: [Color.black.opacity(0.25), Color.white.opacity(0.07)], startPoint: .top, endPoint: .bottom), lineWidth: 1) }
+            let shape = RoundedRectangle(cornerRadius: Palette.isWebsite ? 10 : 14, style: .continuous)
+            if Palette.isWebsite {
+                shape.fill(Palette.surface).overlay { shape.strokeBorder(Palette.line, lineWidth: 1) }
+            } else {
+                shape.fill(Color.black.opacity(0.2))
+                    .overlay { shape.strokeBorder(LinearGradient(colors: [Color.black.opacity(0.25), Color.white.opacity(0.07)], startPoint: .top, endPoint: .bottom), lineWidth: 1) }
+            }
         }
         .animation(Motion.smooth, value: progress)
         .transition(.opacity.combined(with: .move(edge: .top)))
@@ -111,15 +149,29 @@ private struct PhaseStep: View {
         let active = phase == current
         HStack(spacing: 6) {
             ZStack {
-                Circle().strokeBorder(Color.white.opacity(done || active ? 0 : 0.2), lineWidth: 1)
-                if done {
-                    Circle().fill(Palette.ink)
-                    Image(systemName: "checkmark").font(.system(size: 6.5, weight: .heavy)).foregroundStyle(Palette.onAccent)
-                } else if active {
-                    Circle().fill(Palette.yellow.opacity(0.25))
-                    Circle().fill(Palette.yellow).padding(3)
-                        .shadow(color: Palette.yellow, radius: lit ? 5 : 1)
-                        .opacity(lit ? 1 : 0.55)
+                if Palette.isWebsite {
+                    // Square steps with the site's orange for the live one, blinking rather than glowing.
+                    let shape = RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                    shape.strokeBorder(Palette.ink.opacity(done || active ? 0 : 0.25), lineWidth: 1)
+                    if done {
+                        shape.fill(Palette.cream)
+                        Image(systemName: "checkmark").font(.system(size: 6.5, weight: .heavy)).foregroundStyle(Palette.onAccent)
+                    } else if active {
+                        shape.strokeBorder(Palette.signal.opacity(0.6), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 1, style: .continuous).fill(Palette.signal).padding(3.5)
+                            .blink(!reduceMotion)
+                    }
+                } else {
+                    Circle().strokeBorder(Palette.ink.opacity(done || active ? 0 : 0.2), lineWidth: 1)
+                    if done {
+                        Circle().fill(Palette.ink)
+                        Image(systemName: "checkmark").font(.system(size: 6.5, weight: .heavy)).foregroundStyle(Palette.onAccent)
+                    } else if active {
+                        Circle().fill(Palette.yellow.opacity(0.25))
+                        Circle().fill(Palette.yellow).padding(3)
+                            .shadow(color: Palette.yellow, radius: lit ? 5 : 1)
+                            .opacity(lit ? 1 : 0.55)
+                    }
                 }
             }
             .frame(width: 13, height: 13)
@@ -131,7 +183,7 @@ private struct PhaseStep: View {
     }
 
     private func startPulse() {
-        guard phase == current, !reduceMotion else { lit = phase == current; return }
+        guard phase == current, !reduceMotion, !Palette.isWebsite else { lit = phase == current; return }
         lit = false
         withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { lit = true }
     }
@@ -148,7 +200,7 @@ struct QueueWaitingLine: View {
         }
         .font(.system(size: 11.5)).foregroundStyle(Palette.muted)
         .padding(.horizontal, 12).padding(.vertical, 9)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.035)))
+        .background(RoundedRectangle(cornerRadius: Palette.isWebsite ? 9 : 12, style: .continuous).fill(Palette.isWebsite ? Palette.elevated : Color.white.opacity(0.035)))
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
 }

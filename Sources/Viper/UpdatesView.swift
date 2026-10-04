@@ -18,7 +18,6 @@ struct UpdatesView: View {
 
     private var headingSubtitle: String {
         if model.checkingUpdates { return model.updateProgress }
-        if model.updating { return progressTitle }
         if let report = model.updateReport { return summary + " · Last checked \(report.checkedAt.formatted(date: .abbreviated, time: .shortened))" }
         return "Check for updates when you’re ready. Nothing updates automatically."
     }
@@ -27,11 +26,12 @@ struct UpdatesView: View {
         PageHeading("Updates", subtitle: headingSubtitle) {
             if model.checkingUpdates {
                 ScanPulse(color: Palette.blue).scaleEffect(0.8)
-                Button("Cancel") { model.cancelUpdateCheck() }.buttonStyle(GlowButtonStyle(.secondary))
+                Button("Cancel check") { model.cancelUpdateCheck() }.buttonStyle(GlowButtonStyle(.secondary))
             } else {
                 Button { model.checkUpdates() } label: { Label(model.updateReport == nil ? "Check for updates" : "Check again", systemImage: "arrow.clockwise") }
                     .buttonStyle(GlowButtonStyle(.secondary)).disabled(busy || model.updating)
-                if !direct.isEmpty {
+                // Hidden while a run is in progress: the queue card below owns that state and its actions.
+                if !direct.isEmpty && !model.updating {
                     Button { request(direct) } label: { Label("Update all (\(direct.count))", systemImage: "arrow.down.circle") }
                         .buttonStyle(GlowButtonStyle()).disabled(busy || model.updating)
                 }
@@ -64,18 +64,27 @@ struct UpdatesView: View {
             }
         if model.updating {
             let active = model.updateQueue.filter { $0.state != .cancelled }
-            QueueSummaryBar(finished: active.filter { $0.state.isFinished }.count, total: active.count,
-                            current: active.first { $0.state == .updating }?.progress, title: "Overall progress")
-            HStack {
+            let waiting = active.filter { $0.state == .queued }.count
+            Card {
+                HStack {
+                    HStack(spacing: 10) {
+                        ScanPulse(color: Palette.blue)
+                        Text(progressTitle).font(.cardTitle).contentTransition(.numericText())
+                    }
+                    Spacer()
+                    if waiting > 0 {
+                        Button("Cancel waiting") { model.cancelPendingUpdates() }.buttonStyle(GlowButtonStyle(.secondary))
+                    }
+                }
+                QueueSummaryBar(finished: active.filter { $0.state.isFinished }.count, total: active.count,
+                                current: active.first { $0.state == .updating }?.progress, title: "Overall progress")
                 InfoLine(text: "Updates run one at a time. The active update finishes even if you quit; waiting ones can be cancelled.")
-                Spacer()
-                Button("Cancel waiting") { model.cancelPendingUpdates() }.buttonStyle(GlowButtonStyle(.secondary))
             }
         }
         if let message = model.updateMessage { InfoLine(text: message) }
         Card {
             HStack {
-                Text("Available updates").font(.system(size: 18, weight: .semibold))
+                Text("Available updates").font(.cardTitle)
                 Spacer()
                 if model.updateQueue.contains(where: { $0.state.isFinished }) && !model.updating {
                     Button("Clear results") { model.clearFinishedUpdates() }.buttonStyle(LinkButtonStyle())
@@ -95,12 +104,12 @@ struct UpdatesView: View {
         }
         if let report = model.updateReport {
             Card {
-                Text("Source coverage").font(.system(size: 17, weight: .semibold))
+                Text("Source coverage").font(.cardTitle)
                 ForEach(report.sources) { source in
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: source.succeeded ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
                             .foregroundStyle(source.succeeded ? Palette.mint : Palette.yellow)
-                            .shadow(color: (source.succeeded ? Palette.mint : Palette.yellow).opacity(0.6), radius: 5)
+                            .shadow(color: (source.succeeded ? Palette.mint : Palette.yellow).opacity(Palette.isWebsite ? 0 : 0.6), radius: Palette.isWebsite ? 0 : 5)
                         VStack(alignment: .leading, spacing: 5) {
                             Text(source.name).font(.system(size: 12, weight: .semibold))
                             Text(source.detail).font(.system(size: 11)).foregroundStyle(Palette.muted)
@@ -110,7 +119,7 @@ struct UpdatesView: View {
             }
             if !report.notCovered.isEmpty {
                 Card {
-                    Text("Not checked by Viper").font(.system(size: 17, weight: .semibold))
+                    Text("Not checked by Viper").font(.cardTitle)
                     Text("These apps are not App Store receipts and not Homebrew casks. Sparkle, Setapp, and other updaters stay with the app.")
                         .font(.system(size: 12)).foregroundStyle(Palette.muted)
                     ForEach(report.notCovered.prefix(12), id: \.self) { name in
@@ -171,7 +180,7 @@ struct UpdatesView: View {
             }
             if let note = terminalNote(update, finished: state?.isFinished == true) {
                 Label(note, systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 11.5)).foregroundStyle(Color(hex: 0xFFD89A))
+                    .font(.system(size: 11.5)).foregroundStyle(Palette.isWebsite ? Palette.yellow : Color(hex: 0xFFD89A))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 12).padding(.vertical, 9)
                     .frame(maxWidth: .infinity, alignment: .leading)

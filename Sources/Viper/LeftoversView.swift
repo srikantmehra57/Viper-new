@@ -10,7 +10,7 @@ struct LeftoversView: View {
         let state = model.cleanupState(tab)
         PageHeading("Junk & Leftovers", subtitle: tab == .junk ? "Caches, logs, old temporary files, and build data." : "Files from apps that are no longer installed.") {
             if state.loading {
-                Button("Cancel scan") { model.cancelCleanupScan(tab) }.buttonStyle(GlowButtonStyle(.danger))
+                Button("Cancel scan") { model.cancelCleanupScan(tab) }.buttonStyle(GlowButtonStyle(.secondary))
             } else {
                 Button { model.scanCleanup(tab) } label: { Label(state.report == nil ? "Scan" : "Scan again", systemImage: "viewfinder") }
                     .buttonStyle(GlowButtonStyle()).disabled(state.working)

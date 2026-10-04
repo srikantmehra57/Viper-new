@@ -1,12 +1,26 @@
 import Foundation
 import SwiftUI
 
-enum ThemeChoice: String, CaseIterable, Codable {
-    case system = "System", light = "Light", dark = "Dark"
+enum ThemeChoice: String, CaseIterable, Codable, Identifiable {
+    case space = "Space"
+    case website = "Website"
+
+    var id: String { rawValue }
+    var detail: String {
+        switch self {
+        case .space: return "Luminous glass, soft color, and an ambient space backdrop."
+        case .website: return "Warm graphite, cream surfaces, and the editorial style from Viper’s website."
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: value) ?? .space
+    }
 }
 
 struct AppSettings: Codable {
-    var theme: ThemeChoice = .system
+    var theme: ThemeChoice = .space
     var scanFolders: [String] = [FileManager.default.homeDirectoryForCurrentUser.path]
     var excludedFolders: [String] = []
     var includeHiddenFiles = true
@@ -37,7 +51,7 @@ struct AppSettings: Codable {
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        theme = try values.decodeIfPresent(ThemeChoice.self, forKey: .theme) ?? .system
+        theme = try values.decodeIfPresent(ThemeChoice.self, forKey: .theme) ?? .space
         scanFolders = try values.decodeIfPresent([String].self, forKey: .scanFolders) ?? [FileManager.default.homeDirectoryForCurrentUser.path]
         excludedFolders = try values.decodeIfPresent([String].self, forKey: .excludedFolders) ?? []
         includeHiddenFiles = try values.decodeIfPresent(Bool.self, forKey: .includeHiddenFiles) ?? true

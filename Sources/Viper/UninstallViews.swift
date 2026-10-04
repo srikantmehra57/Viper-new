@@ -41,7 +41,7 @@ struct UninstallSheet: View {
         HStack(alignment: .top, spacing: 16) {
             switch session.target {
             case .app(let app): Image(nsImage: NSWorkspace.shared.icon(forFile: app.url.path)).resizable().frame(width: 60, height: 60)
-                .shadow(color: Palette.lavender.opacity(0.45), radius: 16)
+                .shadow(color: Palette.lavender.opacity(Palette.isWebsite ? 0 : 0.45), radius: Palette.isWebsite ? 0 : 16)
             case .tool: ToolIcon(size: 60)
             }
             VStack(alignment: .leading, spacing: 6) {
@@ -241,7 +241,7 @@ struct UninstallSheet: View {
             case .finished:
                 if session.canPutBack {
                     Button { model.putBackUninstalled() } label: { Label("Put everything back", systemImage: "arrow.uturn.backward") }
-                        .buttonStyle(GlowButtonStyle(.accent))
+                        .buttonStyle(GlowButtonStyle(.secondary))
                         .disabled(model.maintenanceBusy || model.installing)
                 }
                 Spacer()
@@ -319,7 +319,7 @@ struct RemovalRow: View {
                 .buttonStyle(IconButtonStyle()).help("Reveal in Finder").accessibilityLabel("Reveal \(item.url.lastPathComponent) in Finder")
         }
         .padding(12)
-        .background(selected ? Palette.mint.opacity(0.05) : Color.white.opacity(hovering ? 0.04 : 0))
+        .background(Palette.isWebsite ? Palette.elevated.opacity(selected ? 1 : (hovering ? 0.7 : 0)) : (selected ? Palette.mint.opacity(0.05) : Color.white.opacity(hovering ? 0.04 : 0)))
         .animation(Motion.hover, value: hovering)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }

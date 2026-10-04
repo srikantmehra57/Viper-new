@@ -44,13 +44,12 @@ struct ApplicationsView: View {
         (applications.map(UninstallerItem.app) + tools.map(UninstallerItem.tool)).sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
     var body: some View {
-        PageHeading("Uninstaller", subtitle: "Files go to the Trash; packages go through their package manager.")
+        PageHeading("Uninstaller", subtitle: "Files go to the Trash; packages go through their package manager.") {
+            Button { model.loadApplications() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                .buttonStyle(GlowButtonStyle(.secondary)).disabled(model.inventoryLoading || model.commandLineLoading)
+        }
         Card {
-            HStack {
-                SearchField(placeholder: "Find an app or tool", text: $search)
-                Button { model.loadApplications() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
-                    .buttonStyle(GlowButtonStyle(.accent)).disabled(model.inventoryLoading || model.commandLineLoading)
-            }
+            SearchField(placeholder: "Find an app or tool", text: $search)
             FlowLayout(spacing: 8, lineSpacing: 8) {
                 ForEach(UninstallerFilter.allCases, id: \.self) { option in
                     FilterChip(title: option.rawValue, selected: filter == option) { filter = option }
@@ -157,7 +156,7 @@ private struct ApplicationRow: View {
         Button(action: action) {
             HStack(spacing: 13) {
                 Image(nsImage: NSWorkspace.shared.icon(forFile: app.url.path)).resizable().frame(width: 36, height: 36)
-                    .shadow(color: .black.opacity(0.4), radius: 4, y: 2)
+                    .shadow(color: .black.opacity(Palette.isWebsite ? 0 : 0.4), radius: Palette.isWebsite ? 0 : 4, y: Palette.isWebsite ? 0 : 2)
                     .scaleEffect(hovering ? 1.08 : 1)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(app.name).font(.system(size: 13, weight: .semibold))

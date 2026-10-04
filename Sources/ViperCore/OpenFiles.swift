@@ -32,14 +32,14 @@ public enum OpenFiles {
         return paths
     }
 
-    private static func allPIDs() -> [pid_t] {
+    static func allPIDs() -> [pid_t] {
         var capacity = 512
         while capacity <= 16_384 {
             var buffer = [pid_t](repeating: 0, count: capacity)
             let wrote = proc_listallpids(&buffer, Int32(capacity * MemoryLayout<pid_t>.size))
             guard wrote > 0 else { return [] }
-            let count = Int(wrote) / MemoryLayout<pid_t>.size
-            if count < capacity { return Array(buffer.prefix(count)).filter { $0 > 1 } }
+            // Unlike proc_listpids, proc_listallpids returns a pid count, not a byte count.
+            if Int(wrote) < capacity { return Array(buffer.prefix(Int(wrote))).filter { $0 > 1 } }
             capacity *= 2
         }
         return []

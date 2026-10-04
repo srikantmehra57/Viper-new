@@ -6,14 +6,19 @@ private struct FieldSurface: View {
     var focused = false
     var hovering = false
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
-        shape.fill(Color.black.opacity(focused ? 0.22 : 0.16))
-            .overlay { shape.fill(Color.white.opacity(focused ? 0.05 : (hovering ? 0.04 : 0.025))) }
-            .overlay {
-                shape.strokeBorder(LinearGradient(colors: [Color.white.opacity(focused ? 0.34 : (hovering ? 0.16 : 0.1)), Color.white.opacity(focused ? 0.14 : 0.05)],
-                                                  startPoint: .top, endPoint: .bottom), lineWidth: 1)
-            }
-            .shadow(color: Color.white.opacity(focused ? 0.06 : 0), radius: focused ? 12 : 0)
+        let shape = RoundedRectangle(cornerRadius: Palette.isWebsite ? 10 : 12, style: .continuous)
+        if Palette.isWebsite {
+            shape.fill(focused || hovering ? Palette.elevated : Palette.surface)
+                .overlay { shape.strokeBorder(focused ? Palette.orange.opacity(0.8) : Palette.line, lineWidth: 1) }
+        } else {
+            shape.fill(Color.black.opacity(focused ? 0.22 : 0.16))
+                .overlay { shape.fill(Color.white.opacity(focused ? 0.05 : (hovering ? 0.04 : 0.025))) }
+                .overlay {
+                    shape.strokeBorder(LinearGradient(colors: [Color.white.opacity(focused ? 0.34 : (hovering ? 0.16 : 0.1)), Color.white.opacity(focused ? 0.14 : 0.05)],
+                                                      startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                }
+                .shadow(color: Color.white.opacity(focused ? 0.06 : 0), radius: focused ? 12 : 0)
+        }
     }
 }
 
@@ -58,15 +63,20 @@ struct ViperCheckboxStyle: ToggleStyle {
             Button { configuration.isOn.toggle() } label: {
                 HStack(spacing: 9) {
                     ZStack {
-                        shape.fill(Color.black.opacity(0.2))
-                        shape.strokeBorder(LinearGradient(colors: [Color.black.opacity(0.3), Color.white.opacity(hovering ? 0.3 : 0.18)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
-                        shape.fill(LinearGradient(colors: [Color.white, Color(hex: 0xDCDAE6)], startPoint: .top, endPoint: .bottom))
-                            .opacity(on ? 1 : 0)
+                        if Palette.isWebsite {
+                            shape.fill(on ? Palette.cream : Color.clear)
+                            shape.strokeBorder(on ? Palette.cream : Palette.ink.opacity(hovering ? 0.3 : 0.18), lineWidth: 1)
+                        } else {
+                            shape.fill(Color.black.opacity(0.2))
+                            shape.strokeBorder(LinearGradient(colors: [Color.black.opacity(0.3), Color.white.opacity(hovering ? 0.3 : 0.18)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                            shape.fill(LinearGradient(colors: [Color.white, Color(hex: 0xDCDAE6)], startPoint: .top, endPoint: .bottom))
+                                .opacity(on ? 1 : 0)
+                        }
                         Image(systemName: "checkmark").font(.system(size: 10, weight: .heavy)).foregroundStyle(Palette.onAccent)
                             .scaleEffect(on ? 1 : 0.3).opacity(on ? 1 : 0)
                     }
                     .frame(width: 18, height: 18)
-                    .shadow(color: .white.opacity(on ? 0.18 : 0), radius: on ? 6 : 0)
+                    .shadow(color: .white.opacity(Palette.isWebsite ? 0 : (on ? 0.18 : 0)), radius: on && !Palette.isWebsite ? 6 : 0)
                     configuration.label.font(.system(size: 12)).foregroundStyle(Palette.ink.opacity(on ? 1 : 0.82))
                 }.contentShape(Rectangle())
             }
@@ -129,8 +139,9 @@ private struct SelectOption: View {
                 Spacer()
                 if selected { Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)) }
             }.font(.system(size: 12, weight: selected ? .semibold : .regular)).padding(.horizontal, 10).padding(.vertical, 8).frame(minWidth: 190)
+                .foregroundStyle(Palette.isWebsite && selected ? Palette.onAccent : Palette.ink)
                 .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(Color.white.opacity(selected ? 0.1 : (hovering ? 0.06 : 0))))
+                    .fill(Palette.isWebsite ? (selected ? Palette.cream : Palette.elevated.opacity(hovering ? 1 : 0)) : Color.white.opacity(selected ? 0.1 : (hovering ? 0.06 : 0))))
                 .contentShape(Rectangle())
         }.buttonStyle(.plain).onHover { hovering = $0 }
             .accessibilityAddTraits(selected ? .isSelected : [])
@@ -144,22 +155,26 @@ struct FilterChip: View {
     @State private var hovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
+        let radius: CGFloat = Palette.isWebsite ? 8 : 100
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         Button(action: action) {
             Text(title).font(.system(size: 12, weight: selected ? .semibold : .medium))
                 .foregroundStyle(selected ? Palette.onAccent : (hovering ? Palette.ink : Palette.ink.opacity(0.66)))
                 .padding(.horizontal, 13).padding(.vertical, 7)
                 .background {
                     ZStack {
-                        Capsule().fill(Color.white.opacity(hovering ? 0.08 : 0.04))
-                        Capsule().strokeBorder(Color.white.opacity(hovering ? 0.16 : 0.08), lineWidth: 1)
-                        Capsule().fill(LinearGradient(colors: [Color.white, Color(hex: 0xDCDAE6)], startPoint: .top, endPoint: .bottom))
-                            .opacity(selected ? 1 : 0)
+                        shape.fill(Palette.isWebsite ? (selected ? Palette.cream : Palette.elevated.opacity(hovering ? 1 : 0)) : Color.white.opacity(hovering ? 0.08 : 0.04))
+                        shape.strokeBorder(Palette.isWebsite ? Palette.line.opacity(selected ? 0 : 1) : Color.white.opacity(hovering ? 0.16 : 0.08), lineWidth: 1)
+                        if !Palette.isWebsite {
+                            shape.fill(LinearGradient(colors: [Color.white, Color(hex: 0xDCDAE6)], startPoint: .top, endPoint: .bottom))
+                                .opacity(selected ? 1 : 0)
+                        }
                     }
                 }
-                .shadow(color: .black.opacity(selected ? 0.3 : 0), radius: selected ? 6 : 0, y: selected ? 3 : 0)
-                .contentShape(Capsule())
+                .shadow(color: .black.opacity(selected && !Palette.isWebsite ? 0.3 : 0), radius: selected && !Palette.isWebsite ? 6 : 0, y: selected && !Palette.isWebsite ? 3 : 0)
+                .contentShape(shape)
         }.buttonStyle(.plain).onHover { hovering = $0 }
-            .modifier(FocusHalo(kind: .capsule))
+            .modifier(FocusHalo(kind: .rounded(radius)))
             .animation(reduceMotion ? nil : Motion.snappy, value: selected)
             .animation(reduceMotion ? nil : Motion.hover, value: hovering)
             .accessibilityAddTraits(selected ? .isSelected : [])
@@ -273,21 +288,22 @@ struct SegmentedTabs<Value: Hashable>: View {
         HStack(spacing: 2) {
             ForEach(options, id: \.self) { option in
                 let selected = option == selection
+                let radius: CGFloat = Palette.isWebsite ? 8 : 100
                 Button {
                     withAnimation(reduceMotion ? nil : Motion.snappy) { selection = option }
                 } label: {
                     Text(title(option)).font(.system(size: 12.5, weight: .medium))
-                        .foregroundStyle(selected ? Palette.ink : Palette.muted)
+                        .foregroundStyle(selected ? (Palette.isWebsite ? Palette.onAccent : Palette.ink) : Palette.muted)
                         .padding(.horizontal, 18).padding(.vertical, 8)
                         .background {
                             if selected {
                                 GlassThumb().matchedGeometryEffect(id: "tab", in: indicator)
                             }
                         }
-                        .contentShape(Capsule())
+                        .contentShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .modifier(FocusHalo(kind: .capsule))
+                .modifier(FocusHalo(kind: .rounded(radius)))
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
@@ -301,9 +317,13 @@ struct SegmentedTabs<Value: Hashable>: View {
 struct SegmentTrack: View {
     var radius: CGFloat? = nil
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: radius ?? 100, style: .continuous)
-        shape.fill(Color.black.opacity(0.25))
-            .overlay { shape.strokeBorder(LinearGradient(colors: [Color.black.opacity(0.3), Color.white.opacity(0.08)], startPoint: .top, endPoint: .bottom), lineWidth: 1) }
+        let shape = RoundedRectangle(cornerRadius: radius ?? (Palette.isWebsite ? 11 : 100), style: .continuous)
+        if Palette.isWebsite {
+            shape.fill(Palette.surface).overlay { shape.strokeBorder(Palette.line, lineWidth: 1) }
+        } else {
+            shape.fill(Color.black.opacity(0.25))
+                .overlay { shape.strokeBorder(LinearGradient(colors: [Color.black.opacity(0.3), Color.white.opacity(0.08)], startPoint: .top, endPoint: .bottom), lineWidth: 1) }
+        }
     }
 }
 
@@ -311,9 +331,13 @@ struct SegmentTrack: View {
 struct GlassThumb: View {
     var radius: CGFloat? = nil
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: radius ?? 100, style: .continuous)
-        shape.fill(Color.white.opacity(0.12))
-            .overlay { shape.strokeBorder(LinearGradient(colors: [Color.white.opacity(0.3), Color.white.opacity(0.06)], startPoint: .top, endPoint: .bottom), lineWidth: 1) }
-            .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
+        let shape = RoundedRectangle(cornerRadius: radius ?? (Palette.isWebsite ? 8 : 100), style: .continuous)
+        if Palette.isWebsite {
+            shape.fill(Palette.cream)
+        } else {
+            shape.fill(Color.white.opacity(0.12))
+                .overlay { shape.strokeBorder(LinearGradient(colors: [Color.white.opacity(0.3), Color.white.opacity(0.06)], startPoint: .top, endPoint: .bottom), lineWidth: 1) }
+                .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
+        }
     }
 }

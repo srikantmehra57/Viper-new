@@ -73,7 +73,7 @@ extension AppModel {
         if installEnvironment == nil { detectInstallations() }
     }
 
-    /// Cached availability older than a day is not fresh enough to add to an install selection.
+    /// Cached availability older than a day is shown as stale. Adding stays allowed: review always re-fetches, and only that fresh metadata can authorise an install.
     func catalogAvailabilityIsStale(_ entry: CatalogEntry) -> Bool {
         guard entry.install.method.isDirect, let key = entry.metadataKey, let checked = catalogMetadata.items[key]?.checkedAt else { return false }
         return Date().timeIntervalSince(checked) > 86_400
@@ -93,7 +93,12 @@ extension AppModel {
 
     // MARK: Detection
 
-    func detectInstallations() {
+    /// Checks what's installed, then asks Homebrew and npm for current availability. Never installs anything.
+    func refreshDiscover() {
+        detectInstallations(thenCheckAvailability: true)
+    }
+
+    func detectInstallations(thenCheckAvailability: Bool = false) {
         guard !detectingInstalls, !installing, !maintenanceBusy, !checkingUpdates, !refreshingCatalog, reviewTask == nil, let catalog else { return }
         detectingInstalls = true
         catalogMessage = nil
@@ -106,6 +111,10 @@ extension AppModel {
                 self.inventory = inventory
                 if let id = npmRuntimeID, !environment.npm.contains(where: { $0.id == id }) { npmRuntimeID = nil }
                 installSelection.removeAll { id in catalog.entry(id).flatMap { status(for: $0) }?.isSelectable != true }
+                detectingInstalls = false
+                detectionTask = nil
+                if thenCheckAvailability, !environment.homebrew.isEmpty || !environment.npm.isEmpty { refreshCatalogMetadata() }
+                return
             } catch is CancellationError {
                 catalogMessage = "Check cancelled. Install status may be out of date."
             } catch {
@@ -166,7 +175,10 @@ extension AppModel {
         }
     }
 
-    func cancelCatalogRefresh() { catalogRefreshTask?.cancel() }
+    func cancelCatalogRefresh() {
+        detectionTask?.cancel()
+        catalogRefreshTask?.cancel()
+    }
 
     /// Bounded, read-only metadata lookups. Results arrive incrementally in the progress text.
     private func verify(_ routes: [(CatalogEntry, PackageRuntime)]) async -> ([String: PackageMetadata], Int) {

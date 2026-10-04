@@ -42,7 +42,7 @@ struct SettingsView: View {
         }
         if !model.settings.preservedJournals.isEmpty {
             Card(color: Palette.peach) {
-                Label("A journal needs review", systemImage: "exclamationmark.triangle.fill").font(.system(size: 17, weight: .semibold))
+                Label("A journal needs review", systemImage: "exclamationmark.triangle.fill").font(.cardTitle)
                 Text("Viper couldn’t read a journal, so it saved a copy and will not change files until you mark it reviewed.")
                     .font(.system(size: 12)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
                 ForEach(model.settings.preservedJournals.sorted(), id: \.self) { path in
@@ -57,7 +57,7 @@ struct SettingsView: View {
         }
         if !unfinishedTransactions.isEmpty {
             Card(color: Palette.peach) {
-                Label("Interrupted removal needs review", systemImage: "exclamationmark.triangle.fill").font(.system(size: 17, weight: .semibold))
+                Label("Interrupted removal needs review", systemImage: "exclamationmark.triangle.fill").font(.cardTitle)
                 Text("\(unfinishedTransactions.count) removal plan\(unfinishedTransactions.count == 1 ? " was" : "s were") not finalized. Viper or the Mac may have stopped mid-operation. Check the recorded paths and the Trash before retrying.")
                     .font(.system(size: 12)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
                 ForEach(unfinishedTransactions.prefix(3)) { transaction in
@@ -73,7 +73,7 @@ struct SettingsView: View {
         if !removalHistory.isEmpty {
             Card {
                 HStack {
-                    Text("Removal history").font(.system(size: 18, weight: .semibold))
+                    Text("Removal history").font(.cardTitle)
                     Spacer()
                     Button("Reveal history file") { model.reveal(removalJournalURL) }.buttonStyle(GlowButtonStyle(.secondary, compact: true))
                 }
@@ -88,24 +88,26 @@ struct SettingsView: View {
                 }
             }
         }
-        Card(color: Palette.lavender) {
+        Card(color: model.settings.theme == .website ? Palette.orange : Palette.lavender) {
             HStack(spacing: 14) {
                 ViperMark(size: 44)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Viper Dark").font(.system(size: 17, weight: .semibold))
-                    Text("A low-glare interface built for focus. Motion follows your Mac’s Reduce Motion setting.")
+                    Text("Appearance").font(.cardTitle)
+                    Text(model.settings.theme.detail)
                         .font(.system(size: 12)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
-                Tag(text: "ACTIVE", color: Palette.mint)
+                SegmentedTabs(options: ThemeChoice.allCases, title: \.rawValue, selection: $model.settings.theme)
+                    .accessibilityLabel("App theme")
             }
+            InfoLine(text: "The theme changes the complete app, including navigation, cards, controls, sheets, and backgrounds. Motion still follows your Mac’s Reduce Motion setting.")
         }
         Card {
             HStack {
-                Text("Saved scan folders").font(.system(size: 18, weight: .semibold))
+                Text("Saved scan folders").font(.cardTitle)
                 Spacer()
                 Button { model.addFolder(exclusion: false) } label: { Label("Add folder", systemImage: "plus") }
-                    .buttonStyle(GlowButtonStyle()).disabled(model.scanning)
+                    .buttonStyle(GlowButtonStyle(.secondary)).disabled(model.scanning)
             }
             Text("Choose a saved folder as your Storage scan location. Each scan covers one folder and its contents.")
                 .font(.system(size: 12)).foregroundStyle(Palette.muted)
@@ -116,9 +118,12 @@ struct SettingsView: View {
                         .glowTile(model.selectedFolder.path == path ? Palette.mint : Palette.slate, radius: 8, glow: model.selectedFolder.path == path)
                     Text(path).font(.system(size: 12)).lineLimit(1).truncationMode(.middle).help(path)
                     Spacer()
-                    Button(model.selectedFolder.path == path ? "Selected" : "Use folder") { model.selectFolder(URL(fileURLWithPath: path)) }
-                        .buttonStyle(GlowButtonStyle(model.selectedFolder.path == path ? .primary : .secondary, compact: true))
-                        .disabled(model.scanning || model.selectedFolder.path == path)
+                    if model.selectedFolder.path == path {
+                        Tag(text: "IN USE", color: Palette.mint)
+                    } else {
+                        Button("Use folder") { model.selectFolder(URL(fileURLWithPath: path)) }
+                            .buttonStyle(GlowButtonStyle(.secondary, compact: true)).disabled(model.scanning)
+                    }
                     Button { model.removeFolder(path, exclusion: false) } label: { Image(systemName: "minus.circle") }
                         .buttonStyle(IconButtonStyle(tint: Palette.peach)).help("Remove from saved folders").accessibilityLabel("Remove \(path) from saved folders").disabled(model.scanning)
                 }.padding(.vertical, 5)
@@ -137,7 +142,7 @@ struct SettingsView: View {
         }
         Card {
             HStack {
-                Text("Excluded folders").font(.system(size: 18, weight: .semibold))
+                Text("Excluded folders").font(.cardTitle)
                 Spacer()
                 Button { model.addFolder(exclusion: true) } label: { Label("Add exclusion", systemImage: "plus") }
                     .buttonStyle(GlowButtonStyle(.secondary)).disabled(model.scanning)
@@ -155,7 +160,7 @@ struct SettingsView: View {
         }
         Card {
             HStack {
-                Text("Full Disk Access").font(.system(size: 18, weight: .semibold))
+                Text("Full Disk Access").font(.cardTitle)
                 Spacer()
                 Tag(text: model.fullDiskAccess == true ? "GRANTED" : (model.fullDiskAccess == false ? "NOT GRANTED" : "CHECKING"),
                     color: model.fullDiskAccess == true ? Palette.mint : Palette.yellow)
@@ -168,12 +173,12 @@ struct SettingsView: View {
                 .buttonStyle(GlowButtonStyle(.secondary, compact: true))
         }
         Card {
-            Text("App behaviour").font(.system(size: 18, weight: .semibold))
+            Text("App behaviour").font(.cardTitle)
             Toggle("Show Viper in the menu bar", isOn: $model.settings.showMenuBar).toggleStyle(ViperCheckboxStyle())
             Toggle("Quit when the last window closes", isOn: $model.settings.quitOnClose).toggleStyle(ViperCheckboxStyle())
             InfoLine(text: "When close-to-quit is off, use the Dock or menu bar to reopen Viper. No scans or update checks run automatically.")
             HStack {
-                Text("Reset folders, exclusions, safety mode, and update sources to defaults.").font(.system(size: 12)).foregroundStyle(Palette.muted)
+                Text("Reset appearance, folders, exclusions, safety mode, and update sources to defaults.").font(.system(size: 12)).foregroundStyle(Palette.muted)
                 Spacer()
                 Button("Reset all settings…") { confirmingReset = true }.buttonStyle(GlowButtonStyle(.secondary, compact: true))
                     .disabled(model.scanning || model.maintenanceBusy || model.installing || model.checkingUpdates)
@@ -185,8 +190,20 @@ struct SettingsView: View {
         } message: {
             Text("Everything on this page returns to its default. File-changing actions switch back to read-only. Removal history is kept.")
         }
+        if let environment = model.installEnvironment, environment.npm.count > 1 {
+            Card {
+                Text("Command-line installs").font(.cardTitle)
+                HStack {
+                    Text("npm tools install into").font(.system(size: 12))
+                    Spacer()
+                    ViperSelect(title: "npm runtime", selection: Binding(get: { model.npmRuntime?.id ?? "" }, set: { model.npmRuntimeID = $0 }),
+                                options: environment.npm.map { ($0.location + ($0.isTerminalDefault == true ? "  ·  Terminal default" : ""), $0.id) }).frame(width: 340)
+                }.disabled(model.installing)
+                InfoLine(text: "Viper uses the npm that Terminal runs by default, so installed tools work where you use them. Change this only if you manage several Node.js versions.")
+            }
+        }
         Card {
-            Text("Update sources").font(.system(size: 18, weight: .semibold))
+            Text("Update sources").font(.cardTitle)
             Toggle("Homebrew apps and tools", isOn: $model.settings.checkHomebrew).toggleStyle(ViperCheckboxStyle())
             Toggle("Global npm tools", isOn: $model.settings.checkNpm).toggleStyle(ViperCheckboxStyle())
             Toggle("App Store catalog", isOn: $model.settings.checkAppStore).toggleStyle(ViperCheckboxStyle())

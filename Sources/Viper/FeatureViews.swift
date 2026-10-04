@@ -74,7 +74,7 @@ private struct PermissionResetCard: View {
         Card {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Reset an app’s permissions").font(.system(size: 18, weight: .semibold))
+                    Text("Reset an app’s permissions").font(.cardTitle)
                     Text("Removes every privacy decision for the app — camera, microphone, files, screen recording, and more. macOS asks again the next time the app needs access.")
                         .font(.system(size: 12)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
                 }
