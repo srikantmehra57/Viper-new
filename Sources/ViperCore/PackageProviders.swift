@@ -3,9 +3,6 @@ import Darwin
 
 public enum PackageManager: String, Codable, Sendable { case homebrew = "Homebrew", npm = "npm" }
 
-/// Operations a provider can perform. Each build enables only what has passed its safety review.
-public enum PackageCapability: String, CaseIterable, Sendable { case inventory, install, update, uninstall }
-
 public struct PackageRuntime: Identifiable, Hashable, Codable, Sendable {
     public var id: String { executable.path }
     public let manager: PackageManager
@@ -18,9 +15,7 @@ public struct PackageRuntime: Identifiable, Hashable, Codable, Sendable {
         self.executable = executable
     }
 
-    /// Update checks live in UpdateChecker; upgrades in Maintenance.swift.
-    public static func capabilities(_ manager: PackageManager) -> Set<PackageCapability> { Set(PackageCapability.allCases) }
-
+    // Update checks live in UpdateChecker; upgrades in Maintenance.swift.
     public static func detect(_ manager: PackageManager) -> [PackageRuntime] {
         (manager == .homebrew ? UpdateChecker.brewExecutables() : UpdateChecker.npmExecutables()).map { .init(manager: manager, executable: $0) }
     }

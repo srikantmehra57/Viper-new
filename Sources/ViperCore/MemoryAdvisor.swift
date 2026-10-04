@@ -110,7 +110,6 @@ public struct MemoryReport: Sendable {
 
     public var recommended: [MemoryCandidate] { candidates.filter { $0.tier == .recommended } }
     public var optional: [MemoryCandidate] { candidates.filter { $0.tier == .optional } }
-    public var recommendedBytes: UInt64 { recommended.reduce(0) { $0 + $1.footprint } }
     /// Recommended ids preselected only when the machine is actually under memory pressure.
     public var defaultSelection: Set<Int32> {
         (status?.pressure ?? .normal) == .normal ? [] : Set(recommended.map(\.id))

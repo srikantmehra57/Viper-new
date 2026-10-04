@@ -39,9 +39,6 @@ enum Palette {
     static var ocean: Color { Color(hex: isWebsite ? 0x8CA6BF : 0x2F7BFF) }
     static var lagoon: Color { Color(hex: isWebsite ? 0x7CAFA8 : 0x19B5A6) }
 
-    /// Kept deliberately subtle: a white that cools slightly toward lavender, never a rainbow.
-    static var brand: LinearGradient { LinearGradient(colors: isWebsite ? [cream, Color.white] : [Color.white, Color(hex: 0xD6D0FF)], startPoint: .topLeading, endPoint: .bottomTrailing) }
-    static var brandHorizontal: LinearGradient { LinearGradient(colors: isWebsite ? [cream, Color.white] : [Color.white, Color(hex: 0xD6D0FF)], startPoint: .leading, endPoint: .trailing) }
     static var titleGradient: LinearGradient { LinearGradient(colors: [ink, ink.opacity(0.84)], startPoint: .top, endPoint: .bottom) }
     /// Warm-to-violet light used for arcs and meters, like light passing through tinted glass.
     static var spectrum: [Color] { isWebsite ? [orange, orange] : [Color(hex: 0xFFC46B), Color(hex: 0xFF7A6B), Color(hex: 0x9B8CFF)] }
@@ -393,24 +390,6 @@ struct FocusHalo: ViewModifier {
             Circle().strokeBorder(color, lineWidth: 2)
         case .rounded(let radius):
             RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(color, lineWidth: 2)
-        }
-    }
-}
-
-/// Compatibility for call sites written against the previous design.
-struct BlockButtonStyle: ButtonStyle {
-    var color: Color = Palette.mint
-    var compact = false
-    func makeBody(configuration: Configuration) -> some View {
-        GlowButtonStyle(tone, compact: compact).makeBody(configuration: configuration)
-    }
-    private var tone: ButtonTone {
-        switch color {
-        case Palette.paper, Palette.surface, Palette.elevated: return .secondary
-        case Palette.peach: return .danger
-        case Palette.lavender: return .accent
-        case Palette.yellow: return .warning
-        default: return .primary
         }
     }
 }
