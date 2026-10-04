@@ -3,13 +3,24 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 configuration="${1:-release}"
-distribution="${3:-${2:-}}"
+skip_build=""
+distribution=""
 if [[ "$configuration" != "debug" && "$configuration" != "release" ]]; then
     echo "Usage: bash scripts/build-app.sh [debug|release] [--skip-build] [--distribution]" >&2
     exit 2
 fi
+for arg in "${@:2}"; do
+    case "$arg" in
+        --skip-build) skip_build=1 ;;
+        --distribution) distribution=1 ;;
+        *)
+            echo "Usage: bash scripts/build-app.sh [debug|release] [--skip-build] [--distribution]" >&2
+            exit 2
+            ;;
+    esac
+done
 build_args=(-c "$configuration")
-if [[ "$distribution" == "--distribution" ]]; then
+if [[ -n "$distribution" ]]; then
     if [[ "$configuration" != "release" ]]; then
         echo "Distribution packages must use the release configuration." >&2
         exit 2
@@ -20,7 +31,7 @@ if [[ "$distribution" == "--distribution" ]]; then
     fi
     build_args+=(--arch arm64 --arch x86_64)
 fi
-if [[ "${2:-}" != "--skip-build" ]]; then
+if [[ -z "$skip_build" ]]; then
     swift build "${build_args[@]}"
 fi
 bin_dir="$(swift build "${build_args[@]}" --show-bin-path)"
@@ -30,15 +41,15 @@ if [[ ! -f "$binary" ]]; then
     exit 1
 fi
 swift scripts/make-icon.swift
-iconutil -c icns .build/Viper.iconset -o Resources/Viper.icns
+iconutil -c icns .build/Viper.iconset -o .build/Viper.icns
 bundle="dist/Viper.app"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 cp "$binary" "$bundle/Contents/MacOS/Viper"
-cp Resources/Viper.icns "$bundle/Contents/Resources/Viper.icns"
+cp .build/Viper.icns "$bundle/Contents/Resources/Viper.icns"
 rm -rf "$bundle/Contents/Resources/CatalogIcons"
 cp -R Resources/CatalogIcons "$bundle/Contents/Resources/CatalogIcons"
 cp Resources/Info.plist "$bundle/Contents/Info.plist"
-if [[ "$distribution" == "--distribution" ]]; then
+if [[ -n "$distribution" ]]; then
     architectures="$(lipo -archs "$bundle/Contents/MacOS/Viper")"
     if [[ "$architectures" != *"arm64"* || "$architectures" != *"x86_64"* ]]; then
         echo "Distribution binary is not universal: $architectures" >&2
@@ -57,7 +68,7 @@ fi
 # Rebuilding in place can leave the Dock showing a cached placeholder icon; refresh the registration.
 touch "$bundle"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$bundle" || true
-if [[ "$distribution" == "--distribution" ]]; then
+if [[ -n "$distribution" ]]; then
     echo "Created, Developer ID signed, and notarized $PWD/$bundle."
 else
     echo "Created $PWD/$bundle (local development signature; not notarized). Use --distribution with signing credentials for release."

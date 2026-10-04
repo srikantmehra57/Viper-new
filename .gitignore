@@ -1,5 +1,25 @@
+# Build output
 .build/
 .swiftpm/
 dist/
-.DS_Store
+
+# Xcode
+xcuserdata/
 *.xcuserstate
+DerivedData/
+
+# macOS
+.DS_Store
+
+# Logs and local environment
+*.log
+.env
+.env.*
+
+# Local AI-agent and editor state
+.claude/
+.commandcode/
+
+# Local material kept outside version control (product website, promo renders)
+website/
+brag-output*/
