@@ -123,7 +123,7 @@ struct RootView: View {
                                 switch model.page {
                                 case .overview: OverviewView()
                                 case .storage: StorageView()
-                                case .uninstaller: ApplicationsView()
+                                case .uninstaller: UninstallerView()
                                 case .leftovers: LeftoversView()
                                 case .memory: MemoryView()
                                 case .updates: UpdatesView()

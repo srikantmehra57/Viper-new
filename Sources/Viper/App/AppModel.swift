@@ -44,7 +44,7 @@ final class AppModel: ObservableObject {
         }
     }
     @Published var page: Page = .overview
-    // Cleanup, updates, and privacy actions. Logic lives in CleanupModel.swift and MaintenanceModel.swift.
+    // Cleanup, updates, and privacy actions. Logic lives in CleanupModel.swift, UpdatesModel.swift, and PrivacyModel.swift.
     @Published var leftovers = CleanupState()
     @Published var junk = CleanupState()
     @Published var storageSelection: Set<String> = []

@@ -225,3 +225,66 @@ struct QueueSummaryBar: View {
         }
     }
 }
+
+/// A radar-style pulse shown while a scan runs. In the Website theme it's the site's stepping-square loader instead.
+struct ScanPulse: View {
+    var color: Color = Palette.mint
+    @State private var spin = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        Group {
+            if Palette.isWebsite {
+                StepLoader()
+            } else {
+                ZStack {
+                    Circle().strokeBorder(color.opacity(0.18), lineWidth: 2)
+                    Circle().trim(from: 0, to: 0.3)
+                        .stroke(AngularGradient(colors: [color.opacity(0), color], center: .center), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .rotationEffect(.degrees(spin ? 360 : 0))
+                    Circle().fill(color).frame(width: 5, height: 5).shadow(color: color, radius: 4)
+                }
+                .onAppear {
+                    guard !reduceMotion else { return }
+                    withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) { spin = true }
+                }
+            }
+        }
+        .frame(width: 22, height: 22)
+        .accessibilityLabel("Working")
+    }
+}
+
+/// Four squares in a 2×2 grid; the lit square steps clockwise in the site's orange, with a fading trail.
+/// It uses one accent regardless of page, as the Website theme does everywhere. Reduce Motion holds it still.
+private struct StepLoader: View {
+    private static let order = [0, 1, 3, 2]
+    private static let period = 0.16
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        if reduceMotion {
+            grid(step: 0)
+        } else {
+            TimelineView(.periodic(from: .now, by: Self.period)) { context in
+                grid(step: Int(context.date.timeIntervalSinceReferenceDate / Self.period))
+            }
+        }
+    }
+
+    private func grid(step: Int) -> some View {
+        let lit = Self.order[step % 4]
+        let trail = Self.order[(step + 3) % 4]
+        return VStack(spacing: 3) {
+            ForEach(0..<2, id: \.self) { row in
+                HStack(spacing: 3) {
+                    ForEach(0..<2, id: \.self) { column in
+                        let index = row * 2 + column
+                        RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                            .fill(index == lit ? Palette.signal : (index == trail && !reduceMotion ? Palette.signal.opacity(0.4) : Palette.ink.opacity(0.18)))
+                            .frame(width: 7, height: 7)
+                    }
+                }
+            }
+        }
+    }
+}

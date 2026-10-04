@@ -15,7 +15,7 @@ struct Entry: Decodable {
 struct Catalog: Decodable { let apps: [Entry] }
 
 let root = URL(fileURLWithPath: CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : FileManager.default.currentDirectoryPath)
-let source = try String(contentsOf: root.appendingPathComponent("Sources/ViperCore/BuiltInCatalog.swift"), encoding: .utf8)
+let source = try String(contentsOf: root.appendingPathComponent("Sources/ViperCore/Catalog/BuiltInCatalog.swift"), encoding: .utf8)
 guard let start = source.range(of: "#\"\"\"\n"), let end = source.range(of: "\n\"\"\"#") else { fatalError("Catalog JSON not found") }
 let catalog = try JSONDecoder().decode(Catalog.self, from: Data(source[start.upperBound..<end.lowerBound].utf8))
 let output = root.appendingPathComponent("Resources/CatalogIcons")

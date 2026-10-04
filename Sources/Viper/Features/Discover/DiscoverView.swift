@@ -428,8 +428,11 @@ private struct CatalogRow: View {
         #if DEBUG
         // `swift run` has no app bundle; use the reviewed icons from the source tree.
         if url == nil {
-            let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            url = source.appendingPathComponent("Resources/CatalogIcons/\(id).png")
+            var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            while root.path != "/" && !FileManager.default.fileExists(atPath: root.appendingPathComponent("Package.swift").path) {
+                root.deleteLastPathComponent()
+            }
+            url = root.appendingPathComponent("Resources/CatalogIcons/\(id).png")
         }
         #endif
         guard let url, let image = NSImage(contentsOf: url) else { missing.insert(id); return nil }

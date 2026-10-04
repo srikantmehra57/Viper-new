@@ -85,7 +85,7 @@ extension AppModel {
                     }
                     var input = MemoryAdvisor.Input(first: first, second: second.processes, interval: interval,
                                                     apps: apps, usage: appUsage, launchdJobs: [:],
-                                                    isAppleSigned: signatures.check, recentlyStopped: stopped,
+                                                    isAppleSigned: { signatures.check($0) }, recentlyStopped: stopped,
                                                     ownPID: ownPID, ownBundleID: ownBundleID, ancestorPIDs: ancestors,
                                                     otherUserProcesses: second.skippedOtherUsers)
                     // launchd jobs are only read for groups big enough to matter.
@@ -197,7 +197,7 @@ extension AppModel {
     private func stop(candidate: [MemoryCandidate], force: Bool) async {
         for item in candidate {
             memory.progress = (force ? "Force quitting " : "Quitting ") + item.name + "…"
-            let outcome = await MemoryStopper.stop(item, force: force, quitApp: Self.quitApp,
+            let outcome = await MemoryStopper.stop(item, force: force, quitApp: { await Self.quitApp($0, $1) },
                                                    isAllowed: { [weak self] item in await self?.memoryBlocker(item) ?? "Viper can’t verify it is safe, so it was left alone." })
             memory.outcomes.append(outcome)
             journalMemory(outcome, forced: force)

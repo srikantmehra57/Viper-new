@@ -21,7 +21,7 @@ private enum UninstallerItem: Identifiable {
     }
 }
 
-struct ApplicationsView: View {
+struct UninstallerView: View {
     @EnvironmentObject private var model: AppModel
     @State private var search = ""
     @State private var showSystem = false
