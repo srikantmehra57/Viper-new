@@ -499,8 +499,8 @@ private struct StatusBadge: View {
             if progress.phase == .downloading, let percent = progress.downloadFraction {
                 return ("arrow.down.circle", "Downloading \(Int((percent * 100).rounded()))%", Palette.lavender)
             }
-            if progress.phase == .downloading, let bytes = progress.downloadedBytes {
-                return ("arrow.down.circle", "Downloading · " + ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file), Palette.lavender)
+            if progress.phase == .downloading, let received = progress.downloadedBytes {
+                return ("arrow.down.circle", "Downloading · " + bytes(received), Palette.lavender)
             }
             return ("arrow.down.circle", progress.phase.title + "…", Palette.lavender)
         default: break

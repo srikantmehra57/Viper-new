@@ -34,10 +34,6 @@ struct UpdateQueueItem: Identifiable {
 }
 
 extension AppModel {
-    private static var journalURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Viper/install-journal.json")
-    }
-
     func updateState(for update: AvailableUpdate) -> UpdateState? { updateQueue.last { $0.id == update.id }?.state }
 
     /// Queues reviewed Homebrew and npm updates. They run one at a time, each rechecked immediately before it starts.
@@ -123,7 +119,7 @@ extension AppModel {
         let entry = InstallJournalEntry(appID: "update:" + item.upgrade.package, appName: item.update.name, source: item.update.source.rawValue, package: item.upgrade.package,
                                         runtime: item.upgrade.runtime.executable.path, outcome: outcome, version: version, detail: detail)
         do {
-            installJournal = try InstallJournal.append(entry, to: Self.journalURL)
+            installJournal = try InstallJournal.append(entry, to: AppPaths.installJournal)
             return true
         } catch let error as JournalStore.Unreadable {
             installJournal.append(entry)

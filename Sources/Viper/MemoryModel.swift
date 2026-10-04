@@ -17,13 +17,6 @@ struct MemoryState {
 }
 
 extension AppModel {
-    static var memoryJournalURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Viper/memory-journal.json")
-    }
-    static var appUsageURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Viper/app-usage.json")
-    }
-
     // MARK: Scanning
 
     /// Two process samples two seconds apart, joined with app state, usage, and launchd jobs. Read-only.
@@ -68,7 +61,7 @@ extension AppModel {
         }
         let ownPID = getpid()
         let ownBundleID = Bundle.main.bundleIdentifier
-        let stopped = MemoryJournal.load(from: Self.memoryJournalURL)
+        let stopped = MemoryJournal.load(from: AppPaths.memoryJournal)
         let signatures = signatureCache
         let prior = lastMemorySample
         let scan = Task {
@@ -246,7 +239,7 @@ extension AppModel {
             try MemoryJournal.append(.init(name: outcome.candidate.name, path: outcome.candidate.members.first?.path ?? "",
                                            bundleID: bundleID, footprint: outcome.candidate.footprint,
                                            outcome: text, forced: forced),
-                                     to: Self.memoryJournalURL)
+                                     to: AppPaths.memoryJournal)
         } catch let error as JournalStore.Unreadable {
             settings.preservedJournals.insert(error.preservedAt.path)
             notice = error.localizedDescription

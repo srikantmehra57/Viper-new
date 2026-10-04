@@ -104,8 +104,8 @@ struct OperationProgressView: View {
                     .font(.system(size: 11)).foregroundStyle(Palette.muted).lineLimit(1).truncationMode(.middle)
                     .contentTransition(.opacity)
                 Spacer(minLength: 8)
-                if let bytes = progress.downloadedBytes, progress.phase == .downloading {
-                    Text(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file) + " received")
+                if let received = progress.downloadedBytes, progress.phase == .downloading {
+                    Text(bytes(received) + " received")
                         .font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundStyle(Palette.ink.opacity(0.8))
                         .contentTransition(.numericText())
                 }

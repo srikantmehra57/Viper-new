@@ -5,17 +5,11 @@ struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
     @State private var confirmingChanges = false
     @State private var confirmingReset = false
-    private var transactionJournalURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Viper/removal-transactions.json")
-    }
-    private var removalJournalURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Viper/removal-journal.json")
-    }
     private var removalHistory: [RemovalJournalEntry] {
-        Array(RemovalJournal.load(from: removalJournalURL).suffix(8).reversed())
+        Array(RemovalJournal.load(from: AppPaths.removalJournal).suffix(8).reversed())
     }
     private var unfinishedTransactions: [RemovalTransaction] {
-        RemovalTransactionJournal.load(from: transactionJournalURL).filter { $0.state == .inProgress }
+        RemovalTransactionJournal.load(from: AppPaths.removalTransactions).filter { $0.state == .inProgress }
     }
     var body: some View {
         PageHeading("Settings", subtitle: model.settings.allowReviewedChanges
@@ -65,7 +59,7 @@ struct SettingsView: View {
                         .font(.system(size: 11, design: .monospaced))
                 }
                 HStack {
-                    Button("Reveal recovery journal") { model.reveal(transactionJournalURL) }.buttonStyle(GlowButtonStyle(.secondary))
+                    Button("Reveal recovery journal") { model.reveal(AppPaths.removalTransactions) }.buttonStyle(GlowButtonStyle(.secondary))
                     Button("Open Trash") { model.openTrash() }.buttonStyle(GlowButtonStyle(.secondary))
                 }
             }
@@ -75,7 +69,7 @@ struct SettingsView: View {
                 HStack {
                     Text("Removal history").font(.cardTitle)
                     Spacer()
-                    Button("Reveal history file") { model.reveal(removalJournalURL) }.buttonStyle(GlowButtonStyle(.secondary, compact: true))
+                    Button("Reveal history file") { model.reveal(AppPaths.removalJournal) }.buttonStyle(GlowButtonStyle(.secondary, compact: true))
                 }
                 InfoLine(text: "Every cleanup and uninstall is recorded locally. Trashed items can be put back until the Trash is emptied in Finder.")
                 ForEach(removalHistory) { entry in

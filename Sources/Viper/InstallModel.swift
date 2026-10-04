@@ -44,14 +44,6 @@ struct InstallReview: Identifiable {
 }
 
 extension AppModel {
-    private static var supportFolder: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Viper")
-    }
-    private static var journalURL: URL { supportFolder.appendingPathComponent("install-journal.json") }
-    private static var metadataURL: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Viper/catalog-metadata.json")
-    }
-
     var npmRuntime: PackageRuntime? {
         guard let environment = installEnvironment else { return nil }
         // Default to the npm Terminal uses, so installed tools work where the user runs them.
@@ -63,8 +55,8 @@ extension AppModel {
         if catalog == nil {
             do {
                 catalog = try Catalog.builtIn()
-                catalogMetadata = CatalogMetadataCache.load(from: Self.metadataURL)
-                installJournal = InstallJournal.load(from: Self.journalURL)
+                catalogMetadata = CatalogMetadataCache.load(from: AppPaths.catalogMetadata)
+                installJournal = InstallJournal.load(from: AppPaths.installJournal)
             } catch {
                 catalogMessage = error.localizedDescription
                 return
@@ -167,7 +159,7 @@ extension AppModel {
             if !Task.isCancelled {
                 catalogMetadata.items.merge(found) { _, new in new }
                 catalogMetadata.refreshedAt = Date()
-                try? catalogMetadata.save(to: Self.metadataURL)
+                try? catalogMetadata.save(to: AppPaths.catalogMetadata)
                 if failures > 0 { notice = "\(failures) package\(failures == 1 ? "" : "s") couldn’t be checked. Check your connection and try again; their availability is unknown." }
             }
             refreshingCatalog = false
@@ -241,7 +233,7 @@ extension AppModel {
                 let (found, _) = await verify(routes)
                 try Task.checkCancellation()
                 catalogMetadata.items.merge(found) { _, new in new }
-                try? catalogMetadata.save(to: Self.metadataURL)
+                try? catalogMetadata.save(to: AppPaths.catalogMetadata)
                 // Only metadata fetched during this review can authorise an install.
                 installReview?.items = InstallPlanner.plan(selection: entries, environment: environment, metadata: found, npmRuntime: npm)
             } catch is CancellationError {
@@ -362,7 +354,7 @@ extension AppModel {
         let entry = InstallJournalEntry(appID: item.entry.id, appName: item.entry.name, source: item.request.method.sourceLabel, package: item.request.package,
                                         runtime: item.request.runtime.executable.path, outcome: outcome, version: version, detail: detail)
         do {
-            installJournal = try InstallJournal.append(entry, to: Self.journalURL)
+            installJournal = try InstallJournal.append(entry, to: AppPaths.installJournal)
             return true
         } catch let error as JournalStore.Unreadable {
             installJournal.append(entry)

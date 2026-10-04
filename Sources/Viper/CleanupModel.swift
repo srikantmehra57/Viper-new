@@ -19,13 +19,6 @@ struct CleanupState {
 }
 
 extension AppModel {
-    private static var journalURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Viper/removal-journal.json")
-    }
-    private static var transactionJournalURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Viper/removal-transactions.json")
-    }
-
     func cleanupState(_ target: CleanupTarget) -> CleanupState {
         switch target {
         case .junk: return junk
@@ -145,7 +138,7 @@ extension AppModel {
         guard !items.isEmpty else { return }
         let recorder: RemovalTransactionRecorder
         do {
-            recorder = try RemovalTransactionRecorder(name: target.rawValue + " cleanup", items: items, url: Self.transactionJournalURL)
+            recorder = try RemovalTransactionRecorder(name: target.rawValue + " cleanup", items: items, url: AppPaths.removalTransactions)
         } catch let error as JournalStore.Unreadable {
             settings.preservedJournals.insert(error.preservedAt.path)
             notice = error.localizedDescription
@@ -190,7 +183,7 @@ extension AppModel {
                     throw CocoaError(.fileWriteUnknown)
                 }
                 try await recorder.complete()
-                try RemovalJournal.append(.init(name: target.rawValue + " cleanup", outcomes: outcomes), to: Self.journalURL)
+                try RemovalJournal.append(.init(name: target.rawValue + " cleanup", outcomes: outcomes), to: AppPaths.removalJournal)
             } catch let error as JournalStore.Unreadable {
                 settings.preservedJournals.insert(error.preservedAt.path)
                 notice = error.localizedDescription
@@ -247,7 +240,7 @@ extension AppModel {
         let restored = UninstallExecutor.restore(cleanupState(target).outcomes)
         updateCleanup(target) { $0.outcomes = restored }
         let missed = restored.filter { if case .removed(_?) = $0.result { return !$0.restored } else { return false } }
-        do { try RemovalJournal.append(.init(name: target.rawValue + " (put back)", outcomes: restored.filter(\.restored)), to: Self.journalURL) }
+        do { try RemovalJournal.append(.init(name: target.rawValue + " (put back)", outcomes: restored.filter(\.restored)), to: AppPaths.removalJournal) }
         catch let error as JournalStore.Unreadable {
             settings.preservedJournals.insert(error.preservedAt.path)
             notice = error.localizedDescription

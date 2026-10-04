@@ -98,7 +98,7 @@ final class AppModel: ObservableObject {
     /// The facts the last memory scan was built on, kept so stops can recheck protection.
     var memoryInput: MemoryAdvisor.Input?
     /// Local launch/activation history used by the memory advisor. Never leaves this Mac.
-    var usageHistory = UsageHistory.load(from: AppModel.appUsageURL)
+    var usageHistory = UsageHistory.load(from: AppPaths.appUsage)
     private var usageHistorySaveTask: Task<Void, Never>?
     var maintenanceBusy: Bool { uninstalling || cleaning || updating || freeingMemory }
     /// Shown in the sidebar only while Viper is changing something.
@@ -136,7 +136,7 @@ final class AppModel: ObservableObject {
         applyAppearance()
         reconcileUnfinishedTransactions()
         preserveUnreadableJournals()
-        scanSummary = StoredScanSummary.load(from: Self.scanSummaryURL)
+        scanSummary = StoredScanSummary.load(from: AppPaths.scanSummary)
         if settings.settingsWereReset {
             notice = (notice.map { $0 + " " } ?? "") + "Your saved settings couldn’t be read, so defaults were restored. Nothing else was changed."
         }
@@ -170,7 +170,7 @@ final class AppModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 30_000_000_000)
             guard let self, !Task.isCancelled else { return }
             usageHistorySaveTask = nil
-            try? usageHistory.save(to: Self.appUsageURL)
+            try? usageHistory.save(to: AppPaths.appUsage)
         }
     }
 
@@ -178,7 +178,7 @@ final class AppModel: ObservableObject {
     func saveUsageHistoryNow() {
         usageHistorySaveTask?.cancel()
         usageHistorySaveTask = nil
-        try? usageHistory.save(to: Self.appUsageURL)
+        try? usageHistory.save(to: AppPaths.appUsage)
     }
 
     /// Reads a folder macOS only exposes with Full Disk Access; the result is informational, never used to change behavior.
@@ -196,10 +196,6 @@ final class AppModel: ObservableObject {
         let appearance = NSAppearance(named: .darkAqua)
         NSApplication.shared.appearance = appearance
         for window in NSApplication.shared.windows { window.appearance = appearance }
-    }
-
-    private static var scanSummaryURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Viper/scan-summary.json")
     }
 
     /// Scans a subfolder from the current results. The folder is remembered with the other saved scan locations.
@@ -311,7 +307,7 @@ final class AppModel: ObservableObject {
                 scan = result
                 let summary = result.summary
                 scanSummary = summary
-                try? summary.save(to: Self.scanSummaryURL)
+                try? summary.save(to: AppPaths.scanSummary)
                 scanMessage = "Scan finished. Your files have not been changed."
             } catch is CancellationError {
                 scanMessage = "Scan cancelled. No files were changed. Start another scan whenever you’re ready."

@@ -31,13 +31,6 @@ struct UninstallSession: Identifiable {
 }
 
 extension AppModel {
-    private static var removalJournalURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Viper/removal-journal.json")
-    }
-    private static var removalTransactionJournalURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Viper/removal-transactions.json")
-    }
-
     var packageOperationBusy: Bool { installing || checkingUpdates || detectingInstalls || refreshingCatalog || reviewTask != nil || maintenanceBusy }
 
     /// Lets a pending quit continue once removals and updates have finished.
@@ -138,7 +131,7 @@ extension AppModel {
         let attempted = plan.items.filter { $0.isRequired || selection.contains($0.id) }
         let recorder: RemovalTransactionRecorder
         do {
-            recorder = try RemovalTransactionRecorder(name: plan.name, items: attempted, url: Self.removalTransactionJournalURL)
+            recorder = try RemovalTransactionRecorder(name: plan.name, items: attempted, url: AppPaths.removalTransactions)
         } catch let error as JournalStore.Unreadable {
             settings.preservedJournals.insert(error.preservedAt.path)
             notice = error.localizedDescription
@@ -172,7 +165,7 @@ extension AppModel {
                     return false
                 }) else { throw CocoaError(.fileWriteUnknown) }
                 try await recorder.complete()
-                try RemovalJournal.append(.init(name: plan.name, outcomes: outcomes), to: Self.removalJournalURL)
+                try RemovalJournal.append(.init(name: plan.name, outcomes: outcomes), to: AppPaths.removalJournal)
             } catch let error as JournalStore.Unreadable {
                 settings.preservedJournals.insert(error.preservedAt.path)
                 notice = error.localizedDescription
@@ -201,7 +194,7 @@ extension AppModel {
         let restored = UninstallExecutor.restore(session.outcomes)
         uninstallSession?.outcomes = restored
         let missed = restored.filter { if case .removed(let trash?) = $0.result { return !$0.restored && !trash.path.isEmpty } else { return false } }
-        do { try RemovalJournal.append(.init(name: session.target.name + " (put back)", outcomes: restored.filter(\.restored)), to: Self.removalJournalURL) }
+        do { try RemovalJournal.append(.init(name: session.target.name + " (put back)", outcomes: restored.filter(\.restored)), to: AppPaths.removalJournal) }
         catch let error as JournalStore.Unreadable {
             settings.preservedJournals.insert(error.preservedAt.path)
             notice = error.localizedDescription
@@ -227,11 +220,10 @@ extension AppModel {
     }
 
     func preserveUnreadableJournals() {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Viper")
         let found = [
-            JournalStore.quarantineIfUnreadable(support.appendingPathComponent("removal-transactions.json"), as: [RemovalTransaction].self),
-            JournalStore.quarantineIfUnreadable(support.appendingPathComponent("removal-journal.json"), as: [RemovalJournalEntry].self),
-            JournalStore.quarantineIfUnreadable(support.appendingPathComponent("install-journal.json"), as: [InstallJournalEntry].self)
+            JournalStore.quarantineIfUnreadable(AppPaths.removalTransactions, as: [RemovalTransaction].self),
+            JournalStore.quarantineIfUnreadable(AppPaths.removalJournal, as: [RemovalJournalEntry].self),
+            JournalStore.quarantineIfUnreadable(AppPaths.installJournal, as: [InstallJournalEntry].self)
         ].compactMap { $0?.path }
         guard !found.isEmpty else { return }
         settings.preservedJournals.formUnion(found)
@@ -241,7 +233,7 @@ extension AppModel {
     func markPreservedJournalsReviewed() { settings.preservedJournals = [] }
 
     func reconcileUnfinishedTransactions() {
-        let unfinished = RemovalTransactionJournal.load(from: Self.removalTransactionJournalURL)
+        let unfinished = RemovalTransactionJournal.load(from: AppPaths.removalTransactions)
             .filter { $0.state == .inProgress && !settings.acknowledgedInterruptedRemovals.contains($0.id.uuidString) }
         guard !unfinished.isEmpty else { return }
         settings.acknowledgedInterruptedRemovals.formUnion(unfinished.map { $0.id.uuidString })
