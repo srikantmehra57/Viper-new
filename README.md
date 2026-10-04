@@ -1,72 +1,161 @@
 # Viper
 
-A native SwiftUI Mac maintenance app with switchable Space and Website themes. Version **1.0**: it scans, uninstalls, cleans, updates, and installs, and every change is reviewed before it happens. See [PLAN.md](PLAN.md) for the design.
+A native macOS maintenance app that shows what is using your disk and memory, then removes, cleans, updates, or installs software only after you review each change.
 
-## Run
+## Overview
 
-Requires macOS 14+ and a working Xcode Swift toolchain with its license accepted.
+Viper is for everyday Mac users and developers who want CleanMyMac/AppCleaner/Ninite-style maintenance without handing control to a black box. Every consequential action follows the same pattern: discover → explain → select → preview → journal → revalidate → execute → report. Viper starts in **read-only mode**: it scans and checks, but nothing changes until you enable reviewed changes in Settings.
 
-```sh
-swift test
-bash scripts/build-app.sh
-open dist/Viper.app
-```
+Core use cases:
 
-For a development build, use `bash scripts/build-app.sh debug`. You can also open `Package.swift` in Xcode and run the Viper executable scheme. Normal builds create a locally signed `.app`. A universal Developer ID build can be signed and notarized with `bash scripts/build-app.sh release --distribution` after setting `VIPER_SIGN_IDENTITY` and `VIPER_NOTARY_PROFILE`.
+- Find what is taking space in a folder and move large files to the Trash.
+- Uninstall an app, Homebrew package, or global npm package together with its confidently matched support files.
+- Find junk (caches, logs, temp files, Xcode data) and leftovers from apps that are no longer installed.
+- Find idle apps, background processes, and forgotten dev servers holding memory, and quit them.
+- Update Homebrew and npm packages, and find App Store updates.
+- Set up a Mac from a curated catalog of apps and command-line tools.
 
-## What it does
+## Current status
 
-- **Storage** — see whole-volume used and available capacity, then scan a chosen folder for a proportional space map of its largest folders and files at the root, plus a category breakdown. Select a folder to scan deeper or reveal a file in Finder; filter its 100, 500, or 1,000 largest files before reviewing any move to the Trash. Files inside apps and protected locations (system folders, `~/Library`, credentials folders) can't be selected; each file is fingerprinted and rechecked immediately before it moves.
-- **Uninstaller** — apps in `/Applications` and `~/Applications`, Homebrew formulae and app-less casks, and global npm packages for every detected runtime. Select one to review the app or package plus its preferences, Application Support, containers, group containers, caches, HTTP/WebKit storage, logs, saved state, LaunchAgents, and hidden home folders, each with size, evidence, and warnings. Identifier matches are selected; name-only matches are unselected; items used by other installed apps and system-wide `/Library` items are kept. The app or package goes first (Homebrew and npm remove their own packages), and related files move to the Trash only if it succeeded.
-- **Junk & Leftovers** — *Junk files*: app caches, logs, old temporary files, Xcode DerivedData, simulator caches, device symbols, and npm's download cache, with anything belonging to an open app kept. *App leftovers*: files named for app identifiers that no installed app, running app, Launch Services record, or exact signed application-group entitlement owns. Nothing is preselected by default. Move reviewed selections to the Trash, put them back, or open the Trash in Finder for a separate permanent-delete action.
-- **Memory** — two process samples two seconds apart find apps and background processes holding memory you aren't using: idle apps with no windows, processes busy in the background, and forgotten localhost dev servers with no connections. App helpers roll up into their app; command-line children group under their parent tool. A status card shows Activity Monitor-style used/wired/compressed/cached memory, swap, and pressure; under normal pressure nothing is preselected. Quitting is review-then-confirm only — apps get a normal Quit (and can ask to save), processes get SIGTERM, and force quit is offered only for items that refused a graceful stop.
-- **Updates** — check Homebrew, global npm, and installed App Store apps, then review the apps and tools with updates available. Homebrew and npm packages update individually or all at once; App Store results open that app's own listing. Package updates run one at a time with `brew upgrade --formula|--cask <name>` or `npm install --global <name>@<exact version>`, are rechecked before starting, and verified afterwards.
-- **Privacy** — shortcuts to each Privacy & Security category, and a per-app **Reset permissions** that runs Apple's `tccutil reset All <bundle id>` so macOS asks again.
-- **Discover & Install** — a validated catalog of 60 apps and tools with starter collections, installed-state detection, a revalidating review, and a serial Homebrew/npm install queue. App Store and publisher-only apps open externally.
-- **Settings** — read-only/file-change safety mode, cleanup preselection, storage result depth, saved scan folders, exclusions, hidden files, appearance, menu-bar visibility, close behaviour, and update sources.
+**Beta, version 1.0.0.** Every page described below works, with 136 unit tests on the core logic. Before a public release, Viper still needs:
 
-Viper starts in read-only mode. After file-changing actions are explicitly enabled, removals and cleanups write their full plan to `removal-transactions.json` before the first mutation and record each outcome as it happens; summaries and package changes are kept in `removal-journal.json` and `install-journal.json`. A status tag appears in the sidebar only while Viper is changing something, and quitting waits for an active change to finish. Turning reviewed changes off cancels installs and updates that have not started. The one already running finishes, and later cleanup or uninstall items are left in place.
+- Developer ID signing and notarization.
+- UI and accessibility testing.
+- Real package-manager installs, updates, and removals tested on a disposable Mac.
 
-## Limits
+See [Known limitations](#known-limitations).
 
-Viper doesn't use administrator rights: system-wide `/Library` items, root-owned apps that Finder must remove, and installer-package casks are reported rather than forced. macOS doesn't let apps read or grant individual privacy permissions, so Privacy can only open Settings or reset an app. Tools installed outside Homebrew and npm (curl scripts, pipx, cargo) aren't listed. There is no remotely refreshed catalog or download-size estimate.
+## Core features
 
-## Storage accuracy and access
+| Page | What it does |
+| --- | --- |
+| Overview | Disk capacity, last scan summary, and shortcuts to each page. |
+| Storage | Scans a chosen folder for a proportional space map, a category breakdown, and its 100/500/1,000 largest files. You can reveal files in Finder or review moving them to the Trash. Protected locations can't be selected. |
+| Uninstaller | Lists apps in `/Applications` and `~/Applications`, Homebrew formulae and casks, and global npm packages. Reviews the app or package and its related files (preferences, containers, caches, logs, LaunchAgents), each with evidence and warnings. |
+| Junk & Leftovers | *Junk*: caches, logs, old temp files, Xcode DerivedData, simulator caches, npm cache. Anything belonging to an open app is kept. *Leftovers*: files whose owning app is no longer installed. Nothing is preselected by default. |
+| Memory | Takes two process samples two seconds apart. Finds idle windowless apps, busy background processes, and localhost dev servers with no connections. Apps get a normal Quit and processes get SIGTERM. Force quit is offered only after a graceful stop fails. |
+| Updates | Checks Homebrew, global npm, and App Store apps. Homebrew and npm updates run one at a time and are verified afterwards. App Store results open the store listing. |
+| Privacy | Opens each Privacy & Security category in System Settings. Can reset one app's permissions with Apple's `tccutil`. |
+| Discover & Install | A built-in, validated catalog of 134 apps and tools with starter collections. Detects what's already installed and queues Homebrew/npm installs after a revalidating review. App Store and vendor-only apps open externally. |
+| Settings | Read-only/reviewed-changes mode, preselection, scan folders and exclusions, theme (Space or Website), menu-bar item, and update sources. Also shows removal history and journal recovery. |
 
-Scans read metadata; they do not read file contents or intentionally download cloud files. File categories use extensions and path hints. The space map compares allocated sizes within the selected folder only; it does not explain the entire volume's used space. Folders and files not shown separately are grouped as Other. Allocated sizes are filesystem estimates, not a promise of reclaimable space: APFS clones, snapshots, compression, and purgeable data affect actual storage. macOS/system data is not separately classified yet. A scan is a point-in-time traversal; files can change while it runs.
+## Tech stack
 
-macOS may ask for access to protected user folders. Inaccessible items are counted and a few paths are shown locally. Full Disk Access is optional and must be granted by the user in System Settings; Viper never changes that setting. Cloud-only entries, symlinks, and mounted volumes inside the scope are skipped. Coverage is not a claim to have inventoried the whole Mac.
-
-Settings deep links are best-effort and must be verified across supported macOS versions. The interface provides a manual navigation fallback. Viper does not read or write the private TCC permission database.
-
-## Uninstaller safety
-
-Discover → explain → select → preview → journal → revalidate → execute → report. Viper starts read-only, automatic cleanup selection is off, and filesystem items carry a bounded recursive metadata fingerprint so changed descendants invalidate the review. Files move to the Trash with `FileManager.trashItem`; Viper only opens the Trash and leaves permanent deletion to Finder. Homebrew casks, formulae, and global npm packages are removed by their own package manager with fixed argument arrays and no force flags, then verified against the provider's inventory; that step can't be put back from the Trash. Homebrew apps are detected through the Caskroom so `brew` state stays consistent. Viper never removes macOS apps, itself, apps outside `/Applications` or `~/Applications`, Homebrew dependency formulae, or tools bundled with Node.js. File contents are never read; names that look like credentials only produce a warning. Running-app state and installed ownership are refreshed for every cleanup item. Removal is mutually exclusive with installs, update checks, and catalog refreshes, and quitting waits for an active removal.
-
-## Memory safety
-
-Nothing is stopped automatically: every item is reviewed and confirmed first. macOS processes (Apple-signed or system-path code, except regular GUI apps like Safari that quit normally), anything launchd restarts (`KeepAlive` jobs would just relaunch and cost more energy), Viper itself and its ancestors, the frontmost app, and apps used often are never offered — relaunching a frequently used app costs more CPU and battery than the compressed idle memory it saves. Usage comes from Spotlight's own counts plus a local launch/activation history in `app-usage.json`. Before any signal, each process's pid, start time, path, and owner are re-verified so a recycled pid is never signalled; apps quit via `NSRunningApplication.terminate()`, processes via SIGTERM, and force quit (`forceTerminate`/`SIGKILL`) only runs when the user explicitly asks for something still running. Stops are recorded in `memory-journal.json`, and a process that comes back within a day is kept rather than offered again.
-
-## Discover & Install safety
-
-The catalog is compiled into the app and validated at load: exact Homebrew tokens (no taps) and npm names (no versions, URLs, or registries), HTTPS websites, `macappstore://` links, and consistent app/command-line types. Catalog content never supplies commands; installs use fixed argument arrays such as `brew install --cask <token>` and `npm install --global <package>@<reviewed-version>`.
-
-Availability checks (`brew info --json=v2`, `npm view`) run only when requested and are cached in `~/Library/Caches/Viper`. Before anything is queued, the review re-reads installed state and fetches fresh metadata; only that fresh metadata can authorise an install. Viper refuses renamed or missing mappings, disabled or deprecated packages, `pkg`/installer casks that need an administrator password, incompatible macOS/architecture/Node.js requirements, non-native Homebrew prefixes, unreadable inventories, and anything already installed from another source (matching app bundle or existing command). Missing Homebrew or npm gets a guided setup that links to the official site; Viper never bootstraps them.
-
-Catalog icons are collected once per catalog review with `swift scripts/fetch-catalog-icons.swift`. Sources are official only, tried in this order: an installed app bundle, Apple's App Store artwork, the publisher's own site icon, or a reviewed override such as a project's GitHub organisation logo. Each source is recorded in `Resources/CatalogIcons/SOURCES.json`, and the build script bundles the icons into the app. The app never downloads icons, and apps without a verified icon show a letter tile. Icons are the publishers' trademarks, used only to identify their software.
-
-Before each queued install, Viper rechecks installed state, metadata, compatibility, the reviewed version, and the exact npm registry origin. npm registry URLs are shown during review; remote registries must use HTTPS, and a registry change requires a new review. npm installs request the exact reviewed version. Update checks and catalog/package operations are gated against each other.
-
-Installs run one at a time and are verified with the provider's own inventory afterwards. Cancelling stops waiting items only; an active install finishes, and quitting waits for it. Outcomes are recorded in `~/Library/Application Support/Viper/install-journal.json`. Nothing is rolled back.
+- **Language:** Swift (tools 5.9, builds with Swift 6.x), Swift Package Manager. No third-party dependencies.
+- **UI:** SwiftUI, with AppKit for windows, panels, Finder/Trash handoff, and `NSRunningApplication`.
+- **Platform:** macOS 14+. Local builds are arm64; distribution builds are universal.
+- **External tools invoked:** `brew`, `npm`, `/usr/bin/tccutil`, `/bin/launchctl`. Each is called with a fixed argument array; nothing goes through a shell. Open-file and process data comes from libproc, and Apple-signature checks use the Security framework.
+- **Network:** only when you start an action. This means Homebrew/npm metadata, the iTunes Search API for App Store updates, and package installs.
+- **Persistence:** settings in `UserDefaults`; JSON journals in `~/Library/Application Support/Viper`; a metadata cache in `~/Library/Caches/Viper`.
 
 ## Architecture
 
-`ViperCore` contains filesystem scanning, app discovery, ownership and removal policy, cleanup and uninstall execution, the catalog (`Catalog`, `BuiltInCatalog`), package providers (`PackageProviders`), install planning, and journals. `Viper` contains the SwiftUI app, design tokens, view models, and AppKit integration. Scans and app discovery run at utility priority outside the main actor. Results remain in memory and disappear when the app quits. No daemon, login item, scheduled task, telemetry, or background polling is installed; the only observer is a workspace launch/activation notification that records `app-usage.json` locally for the memory advisor.
+There are two SwiftPM targets:
 
-## Validation
+- **`ViperCore`** is a library with all domain logic: scanning, ownership and removal policy, planners, executors, package providers, the catalog, journals, and process execution. It has no UI and is what the tests cover.
+- **`Viper`** is the SwiftUI app. One main-actor `AppModel` holds app state. Each feature adds its logic in an `extension AppModel` file next to its views.
 
-`swift test` exercises real temporary fixture directories for counts, hard links, symlinks, bounded results, cancellation, missing folders, and path protection. No tests clean or uninstall real user data.
+```mermaid
+flowchart LR
+  Views[SwiftUI feature views] --> AppModel[AppModel + feature extensions]
+  AppModel --> Core[ViperCore planners, scanners, executors]
+  Core --> FS[(Filesystem / Trash)]
+  Core --> Runner[CommandRunner] --> Tools[brew · npm · tccutil]
+  AppModel --> Journals[(Journals in Application Support)]
+```
 
-Manual checks: launch the packaged app; scan a small test folder; filter results; reveal a file; cancel a larger scan; refresh the app list; open an app detail sheet; exercise Settings handoffs; resize the window; navigate with keyboard and VoiceOver; close the last window and verify the process exits.
+For details, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-Release readiness still requires macOS-version coverage, broader filesystem/provider tests, accessibility QA, energy profiling on reference hardware, and Developer ID signing/notarization.
+## Repository structure
+
+```
+Package.swift                 SwiftPM manifest (ViperCore, Viper, ViperCoreTests)
+Sources/
+├── Viper/                    The macOS app (SwiftUI)
+│   ├── App/                  Entry point, AppModel, settings, on-disk paths
+│   ├── DesignSystem/         Theme/palette, controls, progress indicators
+│   └── Features/<Page>/      One folder per page: views + its AppModel extension
+└── ViperCore/                Domain logic, no UI
+    ├── Storage/              Folder scanning and capacity
+    ├── Inventory/            Installed apps, Homebrew and npm packages
+    ├── Removal/              Removal policy, uninstall planner/executor, junk & leftovers, journals
+    ├── Catalog/              Built-in catalog, install planner, install journal
+    ├── Packages/             Package providers, update checks, upgrades, permission reset
+    ├── Memory/               Process sampling, memory advisor, stopper, usage history
+    └── Support/              CommandRunner, shell environment, link allowlist, progress, journal store
+Tests/ViperCoreTests/         XCTest suites using temporary fixture directories
+Resources/                    Info.plist, bundled catalog icons and their sources
+scripts/                      App bundling, icon rendering, catalog-icon collection
+docs/                         Architecture, development, agent guide, decisions
+```
+
+## Getting started
+
+Prerequisites: macOS 14 or later and Xcode (or the Xcode Command Line Tools) with the license accepted (`sudo xcodebuild -license accept`).
+
+```sh
+git clone https://github.com/srikantmehra57/Viper.git
+cd Viper
+swift test                      # build and run the unit tests
+swift run Viper                 # run the app directly from the package (development)
+bash scripts/build-app.sh       # build a release dist/Viper.app with a local signature
+open dist/Viper.app
+```
+
+There is nothing to install beyond the toolchain, because there are no package dependencies. You can also open `Package.swift` in Xcode and run the `Viper` scheme.
+
+## Environment variables
+
+The app reads none. Two are used only by `scripts/build-app.sh release --distribution`:
+
+| Variable | Purpose |
+| --- | --- |
+| `VIPER_SIGN_IDENTITY` | Developer ID Application signing identity, e.g. `Developer ID Application: Name (TEAMID)`. |
+| `VIPER_NOTARY_PROFILE` | `notarytool` keychain profile created with `xcrun notarytool store-credentials`. |
+
+Never commit either value or any certificate.
+
+## Development workflow
+
+| Task | Command |
+| --- | --- |
+| Build (also the type check) | `swift build` |
+| Test | `swift test` |
+| Run | `swift run Viper` |
+| Release build | `swift build -c release` |
+| App bundle | `bash scripts/build-app.sh [debug\|release] [--skip-build] [--distribution]` |
+| Clean | `swift package clean` (build output is in `.build/` and `dist/`) |
+
+No linter or formatter is configured. Keep to the style of the file you're editing. CI (`.github/workflows/test.yml`) runs `swift test` and a release build on macOS 14. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
+## Architecture principles
+
+- **Read-only by default.** Every mutation checks `allowReviewedChanges` and that no journal needs review. It checks again before each item, not just at confirmation.
+- **Review, then revalidate.** Filesystem items carry an identity and fingerprint taken at review time. The executor rechecks them immediately before moving anything and skips anything that changed.
+- **Trash, never delete.** Files move to the Trash with `FileManager.trashItem`. Emptying the Trash is left to Finder.
+- **Packages are removed by their own manager.** Homebrew and npm uninstall, install, and upgrade their own packages. Viper never deletes their files directly.
+- **No shell strings.** Commands are a fixed executable plus validated arguments, run with an allowlisted environment.
+- **Write-ahead journals.** A removal plan is written before the first change, and each outcome is recorded as it happens.
+- **Nothing in the background.** There is no daemon, login item, telemetry, or scheduled scan. The only refresh loop is Memory's 5-second update, which runs only while that page is visible.
+- **Logic lives in ViperCore.** Views stay thin, and core logic is unit-tested with temporary fixtures, never real user data.
+
+## Known limitations
+
+- **No admin rights.** System-wide `/Library` items, root-owned apps, and installer-package (`pkg`) casks are reported, not removed or installed.
+- **Uninstall finds confidently matched files only.** It doesn't follow package receipts, system extensions, privileged helpers, or vendor-named profile folders, so some data can remain.
+- **Junk ownership partly relies on names.** A cache folder that isn't named after a bundle identifier is matched to its app by name. Such items are never preselected, and folders that any process has open are kept.
+- **Privacy can't read grants.** macOS has no public API to read per-app grants, so Privacy can only open Settings or reset all of one app's permissions.
+- **Only Homebrew and npm tools are listed.** Tools installed with curl scripts, pipx, or cargo aren't shown.
+- **Homebrew updates aren't version-pinned.** They run `brew upgrade <name>`; npm installs and updates pin the reviewed version.
+- **A double-forking package process can escape a cancel or timeout.** Children that are still in the process tree are stopped and reported.
+- **Very large apps are only partly fingerprinted.** For an app with more than 200,000 files, files added deep inside it after review would go to the Trash with it.
+- **The catalog is compiled in.** There is no remote catalog refresh or download-size estimate.
+- **Little real-world testing so far.** There are no UI or VoiceOver tests, and real installs, updates, and removals have not been run end-to-end on a disposable Mac. Only Apple silicon on a recent macOS has been exercised.
+- **Not yet notarized.** Local builds are ad-hoc signed, so Gatekeeper won't treat them as a normal download.
+
+## Documentation
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): system design, data flow, safety model, persistence.
+- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): setup, commands, testing, release, conventions, pitfalls.
+- [docs/AGENT_GUIDE.md](docs/AGENT_GUIDE.md): rules and orientation for AI coding agents and new contributors.
+- [docs/DECISIONS.md](docs/DECISIONS.md): architectural decisions and why they were made.
